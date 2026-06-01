@@ -145,7 +145,7 @@ public class DetectionContentNarrativeService {
     }
 
     /**
-     * 里氏硬度检测上下文：LHD 或名称/方法中含「里氏」。
+     * 里氏硬度检测上下文：LHT/LHD 或名称/方法中含「里氏」。
      */
     private static boolean isLeebHardnessContext(ExperimentType experimentType,
                                                    String experimentTypeNameFallback,
@@ -153,7 +153,7 @@ public class DetectionContentNarrativeService {
                                                    String methodName) {
         if (experimentType != null) {
             String code = experimentType.getCode();
-            if (code != null && "LHD".equalsIgnoreCase(code.trim())) {
+            if (code != null && ("LHT".equalsIgnoreCase(code.trim()) || "LHD".equalsIgnoreCase(code.trim()))) {
                 return true;
             }
             String name = experimentType.getName();
@@ -161,7 +161,9 @@ public class DetectionContentNarrativeService {
                 return true;
             }
         }
-        if (experimentTypeCodeFallback != null && "LHD".equalsIgnoreCase(experimentTypeCodeFallback.trim())) {
+        if (experimentTypeCodeFallback != null
+                && ("LHT".equalsIgnoreCase(experimentTypeCodeFallback.trim())
+                || "LHD".equalsIgnoreCase(experimentTypeCodeFallback.trim()))) {
             return true;
         }
         if (experimentTypeNameFallback != null && experimentTypeNameFallback.contains("里氏")) {

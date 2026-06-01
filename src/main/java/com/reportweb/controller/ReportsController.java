@@ -1175,7 +1175,8 @@ public class ReportsController {
 
     private void syncAatProjectComponentsIfNeeded(Report report, ExperimentType experimentType) {
         if (experimentType == null || experimentType.getCode() == null
-                || !"AAT".equalsIgnoreCase(experimentType.getCode())) {
+                || !("PMI".equalsIgnoreCase(experimentType.getCode())
+                || "AAT".equalsIgnoreCase(experimentType.getCode()))) {
             return;
         }
         if (projectComponentSyncService.syncFromAatReportIfNeeded(report)) {

@@ -213,21 +213,25 @@ public class DataComparisonService {
                 mapping.put("断后伸长率", "断后伸长率");
                 return new FieldMapping("编号", mapping);
 
+            case "BHT":
             case "BHD": // 布氏硬度检测（含各次测量列 1、2、3…，与「平均」同一标准）
                 mapping.put("平均", "布氏");
                 addHardnessPointColumnMappings(mapping, "布氏");
                 return new FieldMapping("编号", mapping);
 
+            case "VHT":
             case "VHN": // 维氏硬度检测
                 mapping.put("平均", "维氏");
                 addHardnessPointColumnMappings(mapping, "维氏");
                 return new FieldMapping("编号", mapping);
 
+            case "RHT":
             case "RHN": // 洛氏硬度检测
                 mapping.put("平均", "洛氏");
                 addHardnessPointColumnMappings(mapping, "洛氏");
                 return new FieldMapping("编号", mapping);
 
+            case "LHT":
             case "LHD": // 里氏：业务上仅「平均」参与判定；通用 compareData 勿映射测点列 1、2、3…
                 mapping.put("平均", "里氏");
                 return new FieldMapping("编号", mapping);
@@ -236,6 +240,7 @@ public class DataComparisonService {
                 mapping.put("断后伸长率A", "断后伸长率");
                 return new FieldMapping("编号", mapping);
                 
+            case "PMI":
             case "AAT": // 合金分析检测
                 // 元素名称直接映射到标准值字段名
                 mapping.put("Mn", "Mn");

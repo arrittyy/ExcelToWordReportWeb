@@ -24,22 +24,22 @@ const getExperimentTypeCodeByInstrumentId = (instrumentId: number | null | undef
     1: 'SOD', 147: 'SOD',
     // 金相检测 (MET)
     2: 'MET', 3: 'MET', 47: 'MET', 48: 'MET', 49: 'MET', 50: 'MET', 51: 'MET', 56: 'MET', 142: 'MET', 145: 'MET',
-    // 里氏硬度检测 (LHD)
-    5: 'LHD', 6: 'LHD', 7: 'LHD', 8: 'LHD', 9: 'LHD', 41: 'LHD', 42: 'LHD', 43: 'LHD', 44: 'LHD', 45: 'LHD', 46: 'LHD',
-    124: 'LHD', 125: 'LHD', 126: 'LHD', 127: 'LHD', 128: 'LHD',
-    // 合金分析检测 (AAT)
-    10: 'AAT', 11: 'AAT', 73: 'AAT', 74: 'AAT', 129: 'AAT',
+    // 里氏硬度检测 (LHT)
+    5: 'LHT', 6: 'LHT', 7: 'LHT', 8: 'LHT', 9: 'LHT', 41: 'LHT', 42: 'LHT', 43: 'LHT', 44: 'LHT', 45: 'LHT', 46: 'LHT',
+    124: 'LHT', 125: 'LHT', 126: 'LHT', 127: 'LHT', 128: 'LHT',
+    // 合金分析检测 (PMI)
+    10: 'PMI', 11: 'PMI', 73: 'PMI', 74: 'PMI', 129: 'PMI',
     // 磁粉检测 (MT)
     21: 'MT', 22: 'MT', 23: 'MT', 24: 'MT', 25: 'MT', 26: 'MT', 60: 'MT', 61: 'MT',
     67: 'MT', 68: 'MT', 69: 'MT', 70: 'MT', 71: 'MT', 88: 'MT', 89: 'MT', 90: 'MT',
     110: 'MT', 111: 'MT', 112: 'MT', 113: 'MT', 114: 'MT', 115: 'MT',
     152: 'MT', 153: 'MT', 154: 'MT', 155: 'MT', 156: 'MT',
-    // 维氏硬度检测 (VHN)
-    27: 'VHN',
-    // 布氏硬度检测 (BHD)
-    30: 'BHD', 31: 'BHD', 32: 'BHD', 33: 'BHD', 34: 'BHD', 35: 'BHD', 91: 'BHD', 92: 'BHD',
-    // 洛氏硬度检测 (RHN) — 41 已在 LHD 中定义
-    40: 'RHN',
+    // 维氏硬度检测 (VHT)
+    27: 'VHT',
+    // 布氏硬度检测 (BHT)
+    30: 'BHT', 31: 'BHT', 32: 'BHT', 33: 'BHT', 34: 'BHT', 35: 'BHT', 91: 'BHT', 92: 'BHT',
+    // 洛氏硬度检测 (RHT) — 41 已在 LHT 中定义
+    40: 'RHT',
     // 涡流检测 (ET)
     57: 'ET',
     // 内窥镜检测 (VT)
@@ -47,10 +47,10 @@ const getExperimentTypeCodeByInstrumentId = (instrumentId: number | null | undef
     // 超声检测 (UT)
     62: 'UT', 63: 'UT', 64: 'UT', 65: 'UT', 66: 'UT', 104: 'UT', 105: 'UT',
     133: 'UT', 134: 'UT', 135: 'UT', 150: 'UT',
-    // 超声波测厚 (UTT)
-    72: 'UTT', 98: 'UTT', 99: 'UTT', 100: 'UTT', 101: 'UTT', 102: 'UTT', 103: 'UTT',
-    116: 'UTT', 117: 'UTT', 118: 'UTT', 119: 'UTT', 120: 'UTT', 121: 'UTT', 122: 'UTT', 123: 'UTT',
-    136: 'UTT', 137: 'UTT', 138: 'UTT', 139: 'UTT', 140: 'UTT', 141: 'UTT',
+    // 超声波测厚 (UTM)
+    72: 'UTM', 98: 'UTM', 99: 'UTM', 100: 'UTM', 101: 'UTM', 102: 'UTM', 103: 'UTM',
+    116: 'UTM', 117: 'UTM', 118: 'UTM', 119: 'UTM', 120: 'UTM', 121: 'UTM', 122: 'UTM', 123: 'UTM',
+    136: 'UTM', 137: 'UTM', 138: 'UTM', 139: 'UTM', 140: 'UTM', 141: 'UTM',
     // 射线检测 (RT)
     76: 'RT', 77: 'RT', 78: 'RT', 79: 'RT', 80: 'RT', 81: 'RT', 82: 'RT', 83: 'RT',
     // 相控阵超声波检测 (PAUT)
@@ -63,19 +63,19 @@ const getExperimentTypeCodeByInstrumentId = (instrumentId: number | null | undef
 // 检测类型选项（与代码对应，用于手工选择）
 const EXPERIMENT_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'UT', label: '超声检测 (UT)' },
-  { value: 'UTT', label: '超声波测厚 (UTT)' },
+  { value: 'UTM', label: '超声波测厚 (UTM)' },
   { value: 'SOD', label: '氧化皮堆积检测 (SOD)' },
-  { value: 'AAT', label: '合金分析检测 (AAT)' },
+  { value: 'PMI', label: '合金分析检测 (PMI)' },
   { value: 'MT', label: '磁粉检测 (MT)' },
-  { value: 'VHN', label: '维氏硬度检测 (VHN)' },
-  { value: 'BHD', label: '布氏硬度检测 (BHD)' },
-  { value: 'RHN', label: '洛氏硬度检测 (RHN)' },
+  { value: 'VHT', label: '维氏硬度检测 (VHT)' },
+  { value: 'BHT', label: '布氏硬度检测 (BHT)' },
+  { value: 'RHT', label: '洛氏硬度检测 (RHT)' },
   { value: 'ET', label: '涡流检测 (ET)' },
   { value: 'VT', label: '内窥镜检测 (VT)' },
   { value: 'RT', label: '射线检测 (RT)' },
   { value: 'PDM', label: '管径测量 (PDM)' },
   { value: 'PAUT', label: '相控阵超声波检测 (PAUT)' },
-  { value: 'LHD', label: '里氏硬度检测 (LHD)' },
+  { value: 'LHT', label: '里氏硬度检测 (LHT)' },
   { value: 'MET', label: '金相检测 (MET)' },
 ];
 

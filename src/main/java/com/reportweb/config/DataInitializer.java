@@ -206,7 +206,7 @@ public class DataInitializer implements CommandLineRunner {
                 ),
                 reportFieldsSchemaTemplate),
             // 超声波测厚：测点编号、实测厚度（mm）最小需要厚度在检测内容中整份填写
-            ExperimentTypeConfig.of("超声波测厚", "UTT",
+            ExperimentTypeConfig.of("超声波测厚", "UTM",
                 createTableSchema(
                     new Column("测点编号", "测点编号", "text"),
                     new Column("实测厚度", "实测厚度（mm）", "text")
@@ -227,7 +227,7 @@ public class DataInitializer implements CommandLineRunner {
                 ),
                 reportFieldsSchemaTemplate),
             // 里氏硬度检测：编号、里氏分类（管件/钢管/焊缝，可保存后弹窗确认）、1～5、平均
-            ExperimentTypeConfig.of("里氏硬度检测", "LHD",
+            ExperimentTypeConfig.of("里氏硬度检测", "LHT",
                 createTableSchema(
                     new Column("编号", "编号", "text"),
                     new Column("里氏分类", "里氏分类", "text"),
@@ -239,8 +239,8 @@ public class DataInitializer implements CommandLineRunner {
                     new Column("平均", "平均", "text")
                 ),
                 reportFieldsSchemaTemplate),
-            // 布什硬度检测：编号、1、2、3、平均
-            ExperimentTypeConfig.of("布什硬度检测", "BHD",
+            // 布氏硬度检测：编号、1、2、3、平均
+            ExperimentTypeConfig.of("布氏硬度检测", "BHT",
                 createTableSchema(
                     new Column("编号", "编号", "text"),
                     new Column("1", "1", "text"),
@@ -256,7 +256,7 @@ public class DataInitializer implements CommandLineRunner {
                 ),
                 reportFieldsSchemaTemplate),
             // 合金分析检测：编号（元素列由前端动态生成）
-            ExperimentTypeConfig.of("合金分析检测", "AAT",
+            ExperimentTypeConfig.of("合金分析检测", "PMI",
                 createTableSchema(
                     new Column("编号", "编号", "text")
                 ),
@@ -286,7 +286,7 @@ public class DataInitializer implements CommandLineRunner {
                 ),
                 reportFieldsSchemaTemplate),
             // 维氏硬度检测：编号、1、2、3、平均
-            ExperimentTypeConfig.of("维氏硬度检测", "VHN",
+            ExperimentTypeConfig.of("维氏硬度检测", "VHT",
                 createTableSchema(
                     new Column("编号", "编号", "text"),
                     new Column("1", "1", "text"),
@@ -296,7 +296,7 @@ public class DataInitializer implements CommandLineRunner {
                 ),
                 reportFieldsSchemaTemplate),
             // 洛氏硬度检测：编号、1、2、3、4、5、平均
-            ExperimentTypeConfig.of("洛氏硬度检测", "RHN",
+            ExperimentTypeConfig.of("洛氏硬度检测", "RHT",
                 createTableSchema(
                     new Column("编号", "编号", "text"),
                     new Column("1", "1", "text"),
@@ -405,6 +405,15 @@ public class DataInitializer implements CommandLineRunner {
     private void upsertExperimentType(ExperimentTypeConfig config) {
         ExperimentType existing = experimentTypeRepository.findByCode(config.code()).orElse(null);
         if (existing == null) {
+            String legacyCode = legacyCodeFor(config.code());
+            if (legacyCode != null) {
+                existing = experimentTypeRepository.findByCode(legacyCode).orElse(null);
+                if (existing != null) {
+                    existing.setCode(config.code());
+                }
+            }
+        }
+        if (existing == null) {
             ExperimentType type = new ExperimentType();
             type.setName(config.name());
             type.setCode(config.code());
@@ -440,6 +449,21 @@ public class DataInitializer implements CommandLineRunner {
         } else {
             log.info("Experiment type {} ({}) already up-to-date", config.name(), config.code());
         }
+    }
+
+    private static String legacyCodeFor(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "UTM" -> "UTT";
+            case "LHT" -> "LHD";
+            case "VHT" -> "VHN";
+            case "RHT" -> "RHN";
+            case "PMI" -> "AAT";
+            case "BHT" -> "BHD";
+            default -> null;
+        };
     }
 
     private record ExperimentTypeConfig(String name, String code, String tableSchema, String reportFieldsSchema) {

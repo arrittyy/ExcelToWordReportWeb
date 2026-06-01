@@ -14,6 +14,7 @@ import com.reportweb.service.ndt.NdtQualificationRegistry;
 import com.reportweb.util.InternalInspectorWhitelist;
 import com.reportweb.util.RecordNumberFormatter;
 import com.reportweb.util.ThirdPartyPlaceholders;
+import com.reportweb.util.ThirdPartyReportNumbering;
 import com.reportweb.util.PdmPipeCreepRules;
 import com.reportweb.util.SummaryWordAppendUtil;
 import com.reportweb.util.LocationNumberCompressor;
@@ -524,7 +525,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         return 1;
     }
 
-    /** 库内 report_number 在 UT 多段拆分时按段递增（末尾 -NNN + rowIndex）。 */
+    /** 库内 report_number 在 UT 多段拆分时按段递增（末尾序号 + rowIndex）。 */
     private String storedReportNumberWithUtRowOffset(Report report) {
         String stored = report.getReportNumber();
         if (!isUtMultiRowActive() || stored == null || stored.isEmpty()) {
@@ -534,17 +535,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         if (offset <= 0) {
             return stored;
         }
-        String trimmed = stored.trim();
-        int lastDash = trimmed.lastIndexOf('-');
-        if (lastDash >= 0 && lastDash < trimmed.length() - 1) {
-            try {
-                int seq = Integer.parseInt(trimmed.substring(lastDash + 1));
-                return trimmed.substring(0, lastDash + 1) + String.format("%03d", seq + offset);
-            } catch (NumberFormatException ignored) {
-                // keep stored
-            }
-        }
-        return stored;
+        return ThirdPartyReportNumbering.withTrailingSequenceOffset(stored, offset);
     }
 
     private String utDetectionContentNarrativeBody(Report report, ExperimentType expType) {
@@ -605,7 +596,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     /**
      * 单项报告编号展示：
      * 总报告润电段：子集内 projectNumber-001 递增（与概述全局编号可不同）；
-     * 总报告第三方段：子集内 thirdPartyProjectNumber-001 递增；
+     * 总报告第三方段：思维奇/自定义 thirdPartyProjectNumber-001 递增；华图 thirdPartyProjectNumber-{TYPE}{001} 按类型递增；
      * 未设置 ThreadLocal 时（如单独导出单项）：用库内 report_number。
      */
     private String brandingReportNumberForDisplay(Report report) {
@@ -622,7 +613,11 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 return storedReportNumberWithUtRowOffset(report);
             }
             String base = ThirdPartyPlaceholders.effectiveThirdPartyProjectNumberBase(p.getThirdPartyProjectNumber());
-            return base + "-" + String.format("%03d", displayIdx);
+            if (ThirdPartyReportNumbering.usesPerTypeNumbering(p.getThirdPartyName())) {
+                return ThirdPartyReportNumbering.formatHuatuNumber(
+                        base, resolveExperimentTypeCodeForReport(report), displayIdx);
+            }
+            return ThirdPartyReportNumbering.formatLegacyNumber(base, displayIdx);
         }
 
         // 润电段：总报告上下文中用子集序号 + 内部项目编号
@@ -656,7 +651,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             syncReportNumbersToOverviewOrder(project, ordered);
 
             boolean thirdPartyBranding = usesThirdPartyBranding(project, report);
-            int subsetIndex = computeBrandingSubsetIndex1Based(project, report, ordered, thirdPartyBranding);
+            int subsetIndex = resolveBrandingDisplayIndex1Based(project, report, ordered, thirdPartyBranding);
 
             beginBrandingPass(project, thirdPartyBranding);
             CURRENT_REPORT_INDEX_1_BASED.set(subsetIndex);
@@ -716,6 +711,45 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             idx++;
         }
         return 1;
+    }
+
+    /**
+     * 华图第三方：当前报告在概述顺序第三方子集中、同检测类型内的 1-based 序号。
+     */
+    private int computeBrandingTypeIndex1Based(
+            Project project, Report target, List<Report> orderedOverview) {
+        String targetCode = resolveExperimentTypeCodeForReport(target);
+        int idx = 1;
+        for (Report r : orderedOverview) {
+            if (!usesThirdPartyBranding(project, r)) {
+                continue;
+            }
+            if (!targetCode.equals(resolveExperimentTypeCodeForReport(r))) {
+                continue;
+            }
+            if (Objects.equals(r.getId(), target.getId())) {
+                return idx;
+            }
+            idx++;
+        }
+        return 1;
+    }
+
+    /** 展示用序号：华图第三方按检测类型子集，其余按润电/第三方全局子集。 */
+    private int resolveBrandingDisplayIndex1Based(
+            Project project, Report target, List<Report> orderedOverview, boolean thirdPartyBranding) {
+        if (thirdPartyBranding && ThirdPartyReportNumbering.usesPerTypeNumbering(project.getThirdPartyName())) {
+            return computeBrandingTypeIndex1Based(project, target, orderedOverview);
+        }
+        return computeBrandingSubsetIndex1Based(project, target, orderedOverview, thirdPartyBranding);
+    }
+
+    private String resolveExperimentTypeCodeForReport(Report report) {
+        ExperimentType et = resolveExperimentTypeForReport(report);
+        if (et != null && et.getCode() != null && !et.getCode().isBlank()) {
+            return et.getCode().trim();
+        }
+        return "UNK";
     }
 
     @Override
@@ -1227,19 +1261,19 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             if ("IMP".equals(code)) {
                 return wordConclusionImpact(report);
             }
-            if ("AAT".equals(code)) {
+            if ("PMI".equals(code) || "AAT".equals(code)) {
                 return wordConclusionAlloy(report);
             }
-            if ("BHD".equals(code)) {
+            if ("BHT".equals(code) || "BHD".equals(code)) {
                 return wordConclusionBrinell(report);
             }
-            if ("VHN".equals(code)) {
+            if ("VHT".equals(code) || "VHN".equals(code)) {
                 return wordConclusionVickers(report);
             }
-            if ("RHN".equals(code)) {
+            if ("RHT".equals(code) || "RHN".equals(code)) {
                 return wordConclusionRockwell(report);
             }
-            if ("LHD".equals(code)) {
+            if ("LHT".equals(code) || "LHD".equals(code)) {
                 DetectionContentDetail leebDetail = detectionContentNarrativeService.parseDetectionContentDetail(report, experimentType);
                 String leebType = leebDetail.type != null ? leebDetail.type.trim() : "";
                 if (leebType.contains("螺栓") ||leebType.contains("螺帽")) {
@@ -1837,10 +1871,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             }
             return appendUtStyleFigureSuffix(sbEtLoc.toString(), report);
         }
-        if ("BHD".equals(code) || "VHN".equals(code) || "RHN".equals(code)) {
+        if ("BHT".equals(code) || "BHD".equals(code)
+                || "VHT".equals(code) || "VHN".equals(code)
+                || "RHT".equals(code) || "RHN".equals(code)) {
             return buildHardnessFamilyDetectionLocationCell(report, expTypeForNarr, false);
         }
-        if ("LHD".equals(code)) {
+        if ("LHT".equals(code) || "LHD".equals(code)) {
             DetectionContentDetail leebDetail = detectionContentNarrativeService.parseDetectionContentDetail(report, experimentType);
             String leebType = leebDetail.type != null ? leebDetail.type.trim() : "";
             if (leebType.contains("螺栓") || leebType.contains("螺帽")) {
@@ -1983,7 +2019,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             beginBrandingPass(project, thirdPartyBranding);
             try {
                 CURRENT_REPORT_INDEX_1_BASED.set(
-                        computeBrandingSubsetIndex1Based(project, report, ordered, thirdPartyBranding));
+                        resolveBrandingDisplayIndex1Based(project, report, ordered, thirdPartyBranding));
                 return buildOverviewWorkLineAutoForSegmentInner(report, experimentType, rowIndex, segmentCount);
             } finally {
                 CURRENT_REPORT_INDEX_1_BASED.remove();
@@ -2225,7 +2261,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             beginBrandingPass(project, thirdPartyBranding);
             try {
                 CURRENT_REPORT_INDEX_1_BASED.set(
-                        computeBrandingSubsetIndex1Based(project, report, ordered, thirdPartyBranding));
+                        resolveBrandingDisplayIndex1Based(project, report, ordered, thirdPartyBranding));
                 try {
                     if (segmentCount > 1) {
                         beginUtMultiRowPass(rowIndex, segmentCount);
@@ -3863,35 +3899,40 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 log.error("Error generating Impact Absorption Energy report for report {}: {}", report.getId(), e.getMessage(), e);
                 generateGenericReport(report, reportIndex, document);
             }
-        } else if (experimentType != null && experimentType.getCode() != null && "AAT".equals(experimentType.getCode())) {
+        } else if (experimentType != null && experimentType.getCode() != null
+                && ("PMI".equals(experimentType.getCode()) || "AAT".equals(experimentType.getCode()))) {
             try {
                 generateAlloyAnalysisReport(report, project, reportIndex, document);
             } catch (Exception e) {
                 log.error("Error generating Alloy Analysis report for report {}: {}", report.getId(), e.getMessage(), e);
                 generateGenericReport(report, reportIndex, document);
             }
-        } else if (experimentType != null && experimentType.getCode() != null && "BHD".equals(experimentType.getCode())) {
+        } else if (experimentType != null && experimentType.getCode() != null
+                && ("BHT".equals(experimentType.getCode()) || "BHD".equals(experimentType.getCode()))) {
             try {
                 generateBrinellHardnessReport(report, project, reportIndex, document);
             } catch (Exception e) {
                 log.error("Error generating Brinell Hardness report for report {}: {}", report.getId(), e.getMessage(), e);
                 generateGenericReport(report, reportIndex, document);
             }
-        } else if (experimentType != null && experimentType.getCode() != null && "VHN".equals(experimentType.getCode())) {
+        } else if (experimentType != null && experimentType.getCode() != null
+                && ("VHT".equals(experimentType.getCode()) || "VHN".equals(experimentType.getCode()))) {
             try {
                 generateVickersHardnessReport(report, project, reportIndex, document);
             } catch (Exception e) {
                 log.error("Error generating Vickers Hardness report for report {}: {}", report.getId(), e.getMessage(), e);
                 generateGenericReport(report, reportIndex, document);
             }
-        } else if (experimentType != null && experimentType.getCode() != null && "RHN".equals(experimentType.getCode())) {
+        } else if (experimentType != null && experimentType.getCode() != null
+                && ("RHT".equals(experimentType.getCode()) || "RHN".equals(experimentType.getCode()))) {
             try {
                 generateRockwellHardnessReport(report, project, reportIndex, document);
             } catch (Exception e) {
                 log.error("Error generating Rockwell Hardness report for report {}: {}", report.getId(), e.getMessage(), e);
                 generateGenericReport(report, reportIndex, document);
             }
-        } else if (experimentType != null && experimentType.getCode() != null && "LHD".equals(experimentType.getCode())) {
+        } else if (experimentType != null && experimentType.getCode() != null
+                && ("LHT".equals(experimentType.getCode()) || "LHD".equals(experimentType.getCode()))) {
             try {
                 DetectionContentDetail leebDetail = detectionContentNarrativeService.parseDetectionContentDetail(report, experimentType);
                 String leebType = leebDetail.type != null ? leebDetail.type.trim() : "";
@@ -8808,12 +8849,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 experimentTypeCode = firstItem.getExperimentType().getCode();
             }
 
-            // 里氏硬度检测（LHD）单独处理：管件/钢管/焊缝三段范围 + 行内「里氏分类」（见 DataComparisonService.compareLeebWithPipeAndWeldRanges）
-            if ("LHD".equalsIgnoreCase(experimentTypeCode)) {
+            // 里氏硬度检测（LHT，兼容 LHD）单独处理：管件/钢管/焊缝三段范围 + 行内「里氏分类」（见 DataComparisonService.compareLeebWithPipeAndWeldRanges）
+            if ("LHT".equalsIgnoreCase(experimentTypeCode) || "LHD".equalsIgnoreCase(experimentTypeCode)) {
                 return getLeebNonComplianceRecords(report, materialProperty);
             }
 
-            if ("AAT".equalsIgnoreCase(experimentTypeCode)) {
+            if ("PMI".equalsIgnoreCase(experimentTypeCode) || "AAT".equalsIgnoreCase(experimentTypeCode)) {
                 return aatDataComparisonService.computeNonComplianceRecords(report);
             }
 
@@ -15153,11 +15194,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             int totalAppendixPages = (int) Math.ceil((double) remainingRows / appendixPageCapacity);
             
             for (int pageIndex = 0; pageIndex < totalAppendixPages; pageIndex++) {
-                // 分页符
-                // XWPFParagraph pageBreak = document.createParagraph();
-                // XWPFRun pageBreakRun = pageBreak.createRun();
-                // pageBreakRun.addBreak(BreakType.PAGE);
-                
+             
+
                 // ========== 附页页眉 ==========
                 // 公司名称
                 XWPFParagraph companyTitle2 = document.createParagraph();
@@ -15276,6 +15314,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 setRowHeight(signRow2_2, 454);
                 createTableCell(signRow2_2.getCell(0), "批准/日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 createTableCell(signRow2_2.getCell(1), approveName, PT_TABLE_WIDTH - 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER, 8);
+                //添加换页符
+                document.createParagraph().createRun().addBreak(BreakType.PAGE);
             }
         }
 
@@ -19539,9 +19579,19 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         int runDianSeq = 1;
         int thirdPartySeq = 1;
+        boolean huatuPerType = ThirdPartyReportNumbering.usesPerTypeNumbering(project.getThirdPartyName());
+        Map<String, Integer> thirdPartyTypeSeq = huatuPerType ? new HashMap<>() : null;
         for (Report report : orderedReports) {
             if (usesThirdPartyBranding(project, report)) {
-                report.setReportNumber(effectiveTpBase + "-" + String.format("%03d", thirdPartySeq++));
+                if (huatuPerType) {
+                    String typeCode = resolveExperimentTypeCodeForReport(report);
+                    int seq = thirdPartyTypeSeq.merge(typeCode, 1, Integer::sum);
+                    report.setReportNumber(ThirdPartyReportNumbering.formatHuatuNumber(
+                            effectiveTpBase, typeCode, seq));
+                } else {
+                    report.setReportNumber(ThirdPartyReportNumbering.formatLegacyNumber(
+                            effectiveTpBase, thirdPartySeq++));
+                }
             } else {
                 if (pn.isEmpty()) {
                     continue;
@@ -19990,6 +20040,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         int sequence = 0;
         int runDianSeq = 0;
         int thirdPartySeq = 0;
+        boolean huatuPerType = ThirdPartyReportNumbering.usesPerTypeNumbering(project.getThirdPartyName());
+        Map<String, Integer> thirdPartyTypeSeq = huatuPerType ? new HashMap<>() : null;
         for (Report report : orderedReports) {
             try {
                 String componentName = null;
@@ -20019,7 +20071,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                         boolean segmentHasDefect = segments > 1
                                 ? hasDefectForOverviewSegment(report, experimentType, overviewComps, row)
                                 : hasDefectForOverview(report, experimentType, overviewComps);
-                        int seq = thirdPartyBranding ? ++thirdPartySeq : ++runDianSeq;
+                        int seq;
+                        if (thirdPartyBranding && huatuPerType) {
+                            String typeCode = resolveExperimentTypeCodeForReport(report);
+                            seq = thirdPartyTypeSeq.merge(typeCode, 1, Integer::sum);
+                        } else if (thirdPartyBranding) {
+                            seq = ++thirdPartySeq;
+                        } else {
+                            seq = ++runDianSeq;
+                        }
                         CURRENT_REPORT_INDEX_1_BASED.set(seq);
                         beginUtMultiRowPass(row, segments);
                         try {

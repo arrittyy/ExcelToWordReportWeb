@@ -507,9 +507,13 @@ function mergeExportPreviewShowDefectFromLocalRow(
 
 const LOCATION_NUMBER_COLUMN_BY_CODE: Record<string, string> = {
   SOD: '编号',
+  BHT: '编号',
+  LHT: '编号',
   BHD: '编号',
   LHD: '编号',
   RDM: '弯头编号',
+  VHT: '编号',
+  RHT: '编号',
   VHN: '编号',
   RHN: '编号',
   PDM: '测点编号',
@@ -518,7 +522,9 @@ const LOCATION_NUMBER_COLUMN_BY_CODE: Record<string, string> = {
   HTN: '编号',
   IMP: '编号',
   RTN: '编号',
+  PMI: '编号',
   AAT: '编号',
+  UTM: '测点编号',
   UTT: '测点编号',
 };
 
@@ -1382,7 +1388,6 @@ const EXPORT_TEXT_RESULT_LIKE_TYPE_CODES = new Set([
   'RT',
   'VT',
   'UTM',
-  'UTT',
   'RDM',
   'PDM',
 ]);
@@ -3149,7 +3154,7 @@ const ProjectDetailPage: React.FC = () => {
         await queryClient.invalidateQueries({ queryKey: ['projectReports', id] });
 
         const savedTypeCreate = activeExperimentTypes.find((aet) => aet.id === typeId);
-        if (savedTypeCreate?.experimentType?.code === 'AAT') {
+        if (savedTypeCreate?.experimentType?.code === 'PMI' || savedTypeCreate?.experimentType?.code === 'AAT') {
           await refetchComponents();
         }
 
@@ -3305,7 +3310,7 @@ const ProjectDetailPage: React.FC = () => {
         await queryClient.invalidateQueries({ queryKey: ['projectReports', id] });
 
         const savedTypeUpdate = activeExperimentTypes.find((aet) => aet.id === typeId);
-        if (savedTypeUpdate?.experimentType?.code === 'AAT') {
+        if (savedTypeUpdate?.experimentType?.code === 'PMI' || savedTypeUpdate?.experimentType?.code === 'AAT') {
           await refetchComponents();
         }
 
@@ -3324,7 +3329,7 @@ const ProjectDetailPage: React.FC = () => {
       const activeType = activeExperimentTypes.find((aet) => aet.id === typeId);
       const code = String(activeType?.experimentType?.code || '').trim().toUpperCase();
       const name = String(activeType?.experimentType?.name || activeType?.name || '').trim();
-      return code === 'LHD' || name.includes('里氏硬度');
+      return code === 'LHT' || code === 'LHD' || name.includes('里氏硬度');
     },
     [activeExperimentTypes],
   );

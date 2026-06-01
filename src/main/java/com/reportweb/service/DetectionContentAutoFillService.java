@@ -21,26 +21,34 @@ import java.util.*;
 public class DetectionContentAutoFillService {
 
     private static final Set<String> AUTO_FILL_TYPE_CODES = new HashSet<>(Arrays.asList(
-            "SOD", "BHD", "LHD", "RDM", "VHN", "RHN", "PDM", "HTC", "CHD", "HTN", "IMP", "RTN", "AAT", "UTT", "UTM"
+            "SOD", "BHT", "LHT", "RDM", "VHT", "RHT", "PDM", "HTC", "CHD", "HTN", "IMP", "RTN", "PMI", "UTM",
+            // 兼容历史编码
+            "BHD", "LHD", "VHN", "RHN", "AAT", "UTT"
     ));
 
     private static final Map<String, String> LOCATION_NUMBER_COLUMN_BY_CODE = new HashMap<>();
     static {
         LOCATION_NUMBER_COLUMN_BY_CODE.put("SOD", "编号");
-        LOCATION_NUMBER_COLUMN_BY_CODE.put("BHD", "编号");
-        LOCATION_NUMBER_COLUMN_BY_CODE.put("LHD", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("BHT", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("LHT", "编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("RDM", "弯头编号");
-        LOCATION_NUMBER_COLUMN_BY_CODE.put("VHN", "编号");
-        LOCATION_NUMBER_COLUMN_BY_CODE.put("RHN", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("VHT", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("RHT", "编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("PDM", "测点编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("HTC", "编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("CHD", "至边缘距离");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("HTN", "编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("IMP", "编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("RTN", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("PMI", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("UTM", "测点编号");
+        // 兼容历史编码
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("BHD", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("LHD", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("VHN", "编号");
+        LOCATION_NUMBER_COLUMN_BY_CODE.put("RHN", "编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("AAT", "编号");
         LOCATION_NUMBER_COLUMN_BY_CODE.put("UTT", "测点编号");
-        LOCATION_NUMBER_COLUMN_BY_CODE.put("UTM", "测点编号");
     }
 
     private final ObjectMapper objectMapper = new ObjectMapper();

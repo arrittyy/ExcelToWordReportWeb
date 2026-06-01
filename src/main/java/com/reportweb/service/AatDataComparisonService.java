@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 合金分析（AAT）：按 perContentRow 分块、按块材质分别与标准比对。
+ * 合金分析（PMI，兼容 AAT）：按 perContentRow 分块、按块材质分别与标准比对。
  */
 @Service
 @RequiredArgsConstructor
@@ -43,7 +43,7 @@ public class AatDataComparisonService {
             return all;
         }
 
-        DataComparisonService.FieldMapping mapping = DataComparisonService.getFieldMapping("AAT");
+        DataComparisonService.FieldMapping mapping = DataComparisonService.getFieldMapping("PMI");
         if (mapping == null) {
             return all;
         }

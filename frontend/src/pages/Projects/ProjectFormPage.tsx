@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   App,
+  AutoComplete,
   Form,
   Input,
   DatePicker,
@@ -28,6 +29,7 @@ import { projectService } from '@/services/projectService';
 import { powerPlantService, unitService } from '@/services/powerPlantService';
 import type { CreateProject, UpdateProject } from '@/types';
 import dayjs from 'dayjs';
+import { thirdPartyNameOptions } from '@/constants/thirdPartyPresets';
 import PersonnelSelect from '@/components/PersonnelSelect/PersonnelSelect';
 import { RUNDIAN_PERSONNEL_NAMES } from '@/constants/rundianPersonnel';
 import { parseStaff, STAFF_DELIMITER } from '@/utils/parseStaff';
@@ -807,12 +809,19 @@ const ProjectFormPage: React.FC = () => {
                 hasFeedback
                 validateTrigger={['onBlur', 'onChange']}
                 rules={[{ max: 200, message: '第三方名称不能超过200个字符' }]}
-                tooltip="可选"
+                tooltip="可选；可从预设选择或自行输入"
               >
-                <Input
-                  prefix={<FileTextOutlined style={{ color: '#bfbfbf' }} />}
-                  placeholder="请输入第三方名称（可选）"
+                <AutoComplete
+                  options={thirdPartyNameOptions}
+                  placeholder="请选择或输入第三方名称（可选）"
+                  filterOption={(inputValue, option) =>
+                    (option?.value as string)
+                      .toUpperCase()
+                      .includes(inputValue.toUpperCase())
+                  }
+                  allowClear
                   size="large"
+                  style={{ width: '100%' }}
                 />
               </Form.Item>
             </Col>

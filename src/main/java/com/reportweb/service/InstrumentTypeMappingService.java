@@ -18,23 +18,23 @@ public class InstrumentTypeMappingService {
         // 金相检测 (MET)
         addMapping(Arrays.asList(2, 3, 47, 48, 49, 50, 51, 56, 142, 145), "MET");
 
-        // 里氏硬度检测 (LHD)
-        addMapping(Arrays.asList(5, 6, 7, 8, 9, 41, 42, 43, 44, 45, 46, 124, 125, 126, 127, 128), "LHD");
+        // 里氏硬度检测 (LHT)
+        addMapping(Arrays.asList(5, 6, 7, 8, 9, 41, 42, 43, 44, 45, 46, 124, 125, 126, 127, 128), "LHT");
 
-        // 合金分析检测 (AAT)
-        addMapping(Arrays.asList(10, 11, 73, 74, 129), "AAT");
+        // 合金分析检测 (PMI)
+        addMapping(Arrays.asList(10, 11, 73, 74, 129), "PMI");
 
         // 磁粉检测 (MT)
         addMapping(Arrays.asList(21, 22, 23, 24, 25, 26, 60, 61, 67, 68, 69, 70, 71, 88, 89, 90, 110, 111, 112, 113, 114, 115, 152, 153, 154, 155, 156), "MT");
 
-        // 维氏硬度检测 (VHN)
-        addMapping(Arrays.asList(27), "VHN");
+        // 维氏硬度检测 (VHT)
+        addMapping(Arrays.asList(27), "VHT");
 
-        // 布氏硬度检测 (BHD)
-        addMapping(Arrays.asList(30, 31, 32, 33, 34, 35, 91, 92), "BHD");
+        // 布氏硬度检测 (BHT)
+        addMapping(Arrays.asList(30, 31, 32, 33, 34, 35, 91, 92), "BHT");
 
-        // 洛氏硬度检测 (RHN)
-        addMapping(Arrays.asList(40, 41), "RHN");
+        // 洛氏硬度检测 (RHT)
+        addMapping(Arrays.asList(40, 41), "RHT");
 
         // 涡流检测 (ET)
         addMapping(Arrays.asList(57), "ET");
@@ -48,8 +48,8 @@ public class InstrumentTypeMappingService {
         // 超声检测 (UT)
         addMapping(Arrays.asList(62, 63, 64, 65, 66, 104, 105, 133, 134, 135, 150), "UT");
 
-        // 超声波测厚 (UTT)
-        addMapping(Arrays.asList(72, 98, 99, 100, 101, 102, 103, 116, 117, 118, 119, 120, 121, 122, 123, 136, 137, 138, 139, 140, 141), "UTT");
+        // 超声波测厚 (UTM)
+        addMapping(Arrays.asList(72, 98, 99, 100, 101, 102, 103, 116, 117, 118, 119, 120, 121, 122, 123, 136, 137, 138, 139, 140, 141), "UTM");
 
         // 射线检测 (RT)
         addMapping(Arrays.asList(76, 77, 78, 79, 80, 81, 82, 83), "RT");

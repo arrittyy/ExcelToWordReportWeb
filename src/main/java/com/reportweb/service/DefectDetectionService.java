@@ -160,8 +160,8 @@ public class DefectDetectionService {
             return hasDefect ? "是" : "否";
         }
 
-        // 超声波测厚 (UTT/UTM)
-        if ("UTT".equals(code) || "UTM".equals(code)) {
+        // 超声波测厚 (UTM，兼容 UTT)
+        if ("UTM".equals(code) || "UTT".equals(code)) {
             boolean hasDefect = hasDefectForUltrasonicThickness(report, component);
             return hasDefect ? "是" : "否";
         }
@@ -206,7 +206,9 @@ public class DefectDetectionService {
         if (report == null || experimentType == null) {
             return null;
         }
-        if (experimentType.getCode() != null && "AAT".equalsIgnoreCase(experimentType.getCode().trim())) {
+        if (experimentType.getCode() != null
+                && ("PMI".equalsIgnoreCase(experimentType.getCode().trim())
+                || "AAT".equalsIgnoreCase(experimentType.getCode().trim()))) {
             List<DataComparisonService.NonComplianceRecord> records =
                     aatDataComparisonService.computeNonComplianceRecords(report);
             return records.isEmpty() ? "否" : "是";
@@ -523,7 +525,7 @@ public class DefectDetectionService {
             return Collections.emptyList();
         }
         String upper = code.trim().toUpperCase();
-        if ("UTT".equals(upper) || "UTM".equals(upper)) {
+        if ("UTM".equals(upper) || "UTT".equals(upper)) {
             return listNonComplianceForUltrasonicThickness(report, component);
         }
         if ("PDM".equals(upper)) {
@@ -593,11 +595,11 @@ public class DefectDetectionService {
 
             String code = experimentTypeCode.trim().toUpperCase();
 
-            if ("AAT".equals(code)) {
+            if ("PMI".equals(code) || "AAT".equals(code)) {
                 return aatDataComparisonService.computeNonComplianceRecords(report);
             }
 
-            if ("LHD".equals(code)) {
+            if ("LHT".equals(code) || "LHD".equals(code)) {
                 String tableDataJson = mergedTableDataJsonForCompare(report);
                 if (tableDataJson == null) {
                     return Collections.emptyList();
