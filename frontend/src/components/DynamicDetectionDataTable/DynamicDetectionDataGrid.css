@@ -1,0 +1,27 @@
+/* react-data-grid base styles */
+@import 'react-data-grid/lib/styles.css';
+
+.detection-data-grid-wrap {
+  width: 100%;
+  min-width: 0;
+}
+
+.detection-data-grid-wrap .rdg {
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+  /* 列总宽超出容器时出现横向滚动，避免表头被压扁截断 */
+  width: max-content;
+  min-width: 100%;
+}
+
+.detection-data-grid-wrap .rdg-cell.non-compliance-cell {
+  background-color: #fff1f0 !important;
+  color: #cf1322;
+  font-weight: 600;
+}
+
+.detection-data-grid-wrap .rdg-editor-container .ant-select,
+.detection-data-grid-wrap .rdg-editor-container .ant-input-number {
+  width: 100%;
+}

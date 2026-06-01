@@ -1,0 +1,91 @@
+/* 项目信息卡片内 Descriptions：左右两半各约 50%（四列表格每列 25%），避免内容撑宽左侧 */
+.project-detail-info-descriptions.ant-descriptions .ant-descriptions-view > table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.project-detail-info-descriptions .ant-descriptions-row > th,
+.project-detail-info-descriptions .ant-descriptions-row > td {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  vertical-align: top;
+}
+
+/* 一行两项：左标签、左值、右标签、右值 — 共四格 */
+.project-detail-info-descriptions .ant-descriptions-row:has(> :nth-child(4)) > th,
+.project-detail-info-descriptions .ant-descriptions-row:has(> :nth-child(4)) > td {
+  width: 25%;
+}
+
+/* 仅一格项（如最后一行「创建时间」）或整行 span：两格 th + td(colspan) */
+.project-detail-info-descriptions .ant-descriptions-row:not(:has(> :nth-child(4))) > th {
+  width: 25%;
+}
+
+.project-detail-info-descriptions .ant-descriptions-row:not(:has(> :nth-child(4))) > td {
+  width: 75%;
+}
+
+/* 项目详情：检测日志 / 部件 / 仪器 / 报告 / 审批 — 分区选项卡 */
+.project-detail-section-tabs.ant-tabs {
+  margin-top: 20px;
+}
+
+.project-detail-section-tabs.ant-tabs-top > .ant-tabs-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  margin-bottom: 16px;
+  padding: 8px 0 4px;
+  background: #fff;
+  border: none;
+  /* 下滑时与正文区分，避免内容从标签栏下「透出」 */
+  box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.12);
+}
+
+.project-detail-section-tabs.ant-tabs-top > .ant-tabs-nav::before {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.project-detail-section-tabs .ant-tabs-nav-wrap::before,
+.project-detail-section-tabs .ant-tabs-nav-wrap::after {
+  display: none;
+}
+
+.project-detail-section-tabs .ant-tabs-tab {
+  padding: 12px 20px !important;
+  margin: 0 8px 0 0 !important;
+  border-radius: 10px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.project-detail-section-tabs .ant-tabs-tab:hover:not(.ant-tabs-tab-active) {
+  background: rgba(102, 126, 234, 0.08);
+}
+
+.project-detail-section-tabs .ant-tabs-tab-active {
+  background: rgba(118, 75, 162, 0.12);
+}
+
+.project-detail-section-tabs .ant-tabs-tab-btn {
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em;
+  color: #434343 !important;
+}
+
+.project-detail-section-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #4338ca !important;
+  font-weight: 700 !important;
+}
+
+.project-detail-section-tabs .ant-tabs-ink-bar {
+  height: 4px !important;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+}
+
+.project-detail-section-tabs .ant-tabs-nav-more {
+  font-size: 17px;
+  font-weight: 600;
+}

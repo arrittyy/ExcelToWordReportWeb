@@ -1,0 +1,165 @@
+package com.reportweb.util;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * 实验类型 tableSchema 列顺序：与前端网格表头、Excel 导出、缺陷通知单字段拼接一致。
+ */
+public final class TableSchemaUtil {
+
+    private TableSchemaUtil() {
+    }
+
+    public record SchemaColumn(String key, String label) {
+    }
+
+    /** 表头标签末尾单位：深度（mm）、波幅(dB) 等 */
+    private static final Pattern LABEL_UNIT_IN_PARENS =
+            Pattern.compile("^(.+?)[（(]([^）)]+)[）)]$");
+
+    private static final Map<String, List<String>> KEY_READ_ALIASES = new LinkedHashMap<>();
+
+    static {
+        KEY_READ_ALIASES.put("序号", List.of("编号"));
+        KEY_READ_ALIASES.put("编号", List.of("序号"));
+        KEY_READ_ALIASES.put("波幅", List.of("波幅(dB)", "波幅（dB）"));
+        KEY_READ_ALIASES.put("深度", List.of("深度(mm)", "深度（mm）"));
+        KEY_READ_ALIASES.put("长度", List.of("长度(mm)", "长度（mm）"));
+        KEY_READ_ALIASES.put("高度", List.of("高度(mm)", "高度（mm）"));
+        KEY_READ_ALIASES.put("厚度", List.of("厚度 mm", "厚度（mm）", "厚度(mm)", "厚度mm"));
+    }
+
+    public static List<SchemaColumn> parseColumns(String tableSchemaJson, ObjectMapper objectMapper) {
+        List<SchemaColumn> out = new ArrayList<>();
+        if (tableSchemaJson == null || tableSchemaJson.isBlank()) {
+            return out;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(tableSchemaJson);
+            JsonNode cols = root != null ? root.get("columns") : null;
+            if (cols == null || !cols.isArray()) {
+                return out;
+            }
+            for (JsonNode col : cols) {
+                if (col == null || !col.isObject()) {
+                    continue;
+                }
+                String key = col.has("key") && !col.get("key").isNull() ? col.get("key").asText("").trim() : "";
+                String label = col.has("label") && !col.get("label").isNull()
+                        ? col.get("label").asText("").trim()
+                        : key;
+                if (key.isEmpty() && label.isEmpty()) {
+                    continue;
+                }
+                if (key.isEmpty()) {
+                    key = label;
+                }
+                if (label.isEmpty()) {
+                    label = key;
+                }
+                out.add(new SchemaColumn(key, label));
+            }
+        } catch (Exception ignored) {
+            return out;
+        }
+        return out;
+    }
+
+    /** 通知单/导出用：按 schema 列序读取单元格文本（空与「/」视为无值）。 */
+    public static String cellText(JsonNode row, String key, String label) {
+        if (row == null || !row.isObject()) {
+            return "";
+        }
+        String v = readField(row, key);
+        if (v.isEmpty() && label != null && !label.equals(key)) {
+            v = readField(row, label);
+        }
+        if (v.isEmpty()) {
+            List<String> aliases = KEY_READ_ALIASES.get(key);
+            if (aliases != null) {
+                for (String alt : aliases) {
+                    v = readField(row, alt);
+                    if (!v.isEmpty()) {
+                        break;
+                    }
+                }
+            }
+        }
+        return v;
+    }
+
+    /**
+     * 叙述用短语：「深度（mm）」+「2」→「深度为2mm」；无括号单位时「级别」+「Ⅲ」→「级别为Ⅲ」。
+     */
+    public static String formatLabeledPhrase(String label, String value) {
+        if (label == null || value == null) {
+            return "";
+        }
+        String lbl = label.trim();
+        String val = value.trim();
+        if (lbl.isEmpty() || val.isEmpty() || "/".equals(val)) {
+            return "";
+        }
+        Matcher m = LABEL_UNIT_IN_PARENS.matcher(lbl);
+        if (m.matches()) {
+            String name = m.group(1).trim();
+            String unit = m.group(2).trim();
+            if (name.isEmpty()) {
+                name = lbl;
+            }
+            if (!unit.isEmpty()) {
+                return name + "为" + val + unit;
+            }
+        }
+        return lbl + "为" + val;
+    }
+
+    /**
+     * 按 tableSchema 列顺序拼接字段短语（为/单位后置），逗号连接。
+     */
+    public static String formatNotificationLine(JsonNode row, List<SchemaColumn> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        for (SchemaColumn col : columns) {
+            String val = cellText(row, col.key(), col.label());
+            if (val.isEmpty()) {
+                continue;
+            }
+            String phrase = formatLabeledPhrase(col.label(), val);
+            if (!phrase.isEmpty()) {
+                parts.add(phrase);
+            }
+        }
+        return String.join("，", parts);
+    }
+
+    /** 用于通知单行排序：与 {@code getDefectNumberValue} 一致，优先编号，其次序号。 */
+    public static String rowSortKey(JsonNode row) {
+        String s = cellText(row, "编号", "编号");
+        if (s.isEmpty()) {
+            s = cellText(row, "序号", "序号");
+        }
+        return s;
+    }
+
+    private static String readField(JsonNode row, String field) {
+        if (field == null || field.isEmpty() || !row.has(field) || row.get(field).isNull()) {
+            return "";
+        }
+        String v = row.get(field).asText("").trim();
+        if (v.isEmpty() || "/".equals(v)) {
+            return "";
+        }
+        return v;
+    }
+}

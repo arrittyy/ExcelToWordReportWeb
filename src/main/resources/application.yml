@@ -1,0 +1,57 @@
+server:
+  port: 8080
+  address: 0.0.0.0  # 监听所有网络接口，允许局域网访问
+
+spring:
+  servlet:
+    multipart:
+      # 与 ProjectsController 项目附件上限一致（50MB）；图片等接口仍在 Controller 内单独限制 10MB
+      max-file-size: 50MB
+      max-request-size: 55MB
+  datasource:
+    url: jdbc:postgresql://localhost:5432/reportweb
+    username: postgres
+    password: 121212
+  
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+        hbm2ddl:
+          auto: none
+        jdbc:
+          lob:
+            non_contextual_creation: true
+
+# Development JWT Secret (use environment variable in production)
+jwt:
+  secret: aXJ5dFk3MnBRM3hWOWNCNWVGOGdIMWpLNGxNN25QMHFSMnNUNnZXOXhaM2FCNWNFOGZHMWhJNGpMN21OMHBRMnJTNXRV
+  expiration: 86400000
+
+# Development file upload directory
+file:
+  upload-dir: ./uploads
+
+# Signatures directory
+signatures:
+  dir: ./signatures
+
+# Development logging
+logging:
+  level:
+    com.reportweb: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+
+# Application initialization settings
+app:
+  init:
+    power-plants: false  # 设置为 true 以初始化电厂数据（仅在首次运行时设置为 true）
+    instruments: false  # 设置为 true 以初始化仪器设备数据（仅在首次运行时设置为 true）
+  word-export-job:
+    retention-days: 7
+    cleanup-cron: "0 30 3 * * *"
+

@@ -1,0 +1,26 @@
+﻿# Maven 编译产物
+target/
+*.class
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# IDE / 编辑器
+.idea/
+.vscode/
+.cursor/
+*.iml
+
+# 运行时上传/临时文件
+uploads/
+tmp_test_images/
+
+# 日志
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+cp.txt

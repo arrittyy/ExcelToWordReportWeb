@@ -1,0 +1,41 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/reportweb
+    username: postgres
+    password: 121212
+  
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+        hbm2ddl:
+          auto: none
+        jdbc:
+          lob:
+            non_contextual_creation: true
+
+# Development JWT Secret (use environment variable in production)
+jwt:
+  secret: aXJ5dFk3MnBRM3hWOWNCNWVGOGdIMWpLNGxNN25QMHFSMnNUNnZXOXhaM2FCNWNFOGZHMWhJNGpMN21OMHBRMnJTNXRV
+  expiration: 86400000  # 24 hours in milliseconds
+
+# Development file upload directory
+file:
+  upload-dir: ./uploads
+
+# Development logging
+logging:
+  level:
+    com.reportweb: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+
+app:
+  word-export-job:
+    retention-days: 7
+    cleanup-cron: "0 30 3 * * *"
+
+
