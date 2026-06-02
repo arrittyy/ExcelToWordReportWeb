@@ -2054,6 +2054,9 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
      * 总报告「3 工作内容」单段叙述正文（不含报告编号尾缀；不用检测内容导出覆盖，按行对齐部件名）。
      */
     private String buildOverviewWorkDetailTextForSegment(Report report, ExperimentType experimentType, int rowIndex) {
+        if (experimentType != null && "MET".equalsIgnoreCase(experimentType.getCode())) {
+            return buildSingleItemWordEquivalentDetectionNarrativeBody(report, experimentType, rowIndex);
+        }
         List<ProjectComponent> overviewComps = resolveComponentsForReport(report);
         String experimentTypeName = experimentType != null && experimentType.getName() != null
                 ? experimentType.getName() : "";
@@ -15153,7 +15156,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         }
 
         // ========== 9. 检测结论 ==========
-        // 基准高度 2271 对应 1 行材质标准；每多一行材质标准（+510）则结论行相应减 510
+        // 基准高度 2271 对应 1 行材质标准；每多一行材质标准（+510）则结论行相应减 510  
         int conclusionRowHeight = 2271 - Math.max(0, standardMaterials.size() - 1) * 510;
         XWPFTableRow conclusionRow = resultTable.createRow();
         setRowHeight(conclusionRow, conclusionRowHeight);

@@ -110,14 +110,143 @@ public class ProjectsController {
     private static final int STEP_PENDING_REVIEW = 1;
     private static final int STEP_PENDING_APPROVAL = 2;
     private static final int STEP_APPROVED = 3;
+
+    private static boolean eqName(String left, String right) {
+        return left != null && right != null && left.trim().equals(right.trim());
+    }
+
+    private static boolean matchesAnyName(String roleName, String... principalNames) {
+        if (roleName == null || roleName.isBlank() || principalNames == null || principalNames.length == 0) {
+            return false;
+        }
+        for (String n : principalNames) {
+            if (eqName(roleName, n)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAssignedApprovalRole(Project project, String... principalNames) {
+        if (project == null || principalNames == null || principalNames.length == 0) {
+            return false;
+        }
+        return matchesAnyName(project.getWriterNdt(), principalNames)
+                || matchesAnyName(project.getReviewerNdt(), principalNames)
+                || matchesAnyName(project.getApproverNdt(), principalNames)
+                || matchesAnyName(project.getWriterChem(), principalNames)
+                || matchesAnyName(project.getReviewerChem(), principalNames)
+                || matchesAnyName(project.getApproverChem(), principalNames)
+                || matchesAnyName(project.getResponsiblePerson(), principalNames);
+    }
+
+    private static boolean isProjectResponsible(Project project, String... principalNames) {
+        return project != null && matchesAnyName(project.getResponsiblePerson(), principalNames);
+    }
+
+    private static boolean canSubmitAtWriterStep(Project project, String track, String... principalNames) {
+        if (project == null) {
+            return false;
+        }
+        boolean isNdt = "ndt".equalsIgnoreCase(track);
+        boolean atWriterStep = isNdt
+                ? (project.getApprovalStepNdt() == null || project.getApprovalStepNdt() == STEP_WRITER)
+                : (project.getApprovalStepChem() == null || project.getApprovalStepChem() == STEP_WRITER);
+        if (!atWriterStep) {
+            return false;
+        }
+        boolean isWriter = isNdt
+                ? matchesAnyName(project.getWriterNdt(), principalNames)
+                : matchesAnyName(project.getWriterChem(), principalNames);
+        return isWriter || isProjectResponsible(project, principalNames);
+    }
+
+    private static String[] principalNames(com.reportweb.entity.User currentUser) {
+        if (currentUser == null) {
+            return new String[0];
+        }
+        List<String> names = new ArrayList<>(2);
+        String full = currentUser.getFullName() != null ? currentUser.getFullName().trim() : "";
+        if (!full.isEmpty()) {
+            names.add(full);
+        }
+        String userName = currentUser.getUserName() != null ? currentUser.getUserName().trim() : "";
+        if (!userName.isEmpty() && names.stream().noneMatch(n -> eqName(n, userName))) {
+            names.add(userName);
+        }
+        return names.toArray(new String[0]);
+    }
+
+    private boolean canAccessProject(Project project,
+                                     boolean isAdmin,
+                                     boolean isSubUser,
+                                     String effectiveUserId,
+                                     String... principalNames) {
+        if (project == null) {
+            return false;
+        }
+        if (isAdmin) {
+            return true;
+        }
+        if (effectiveUserId != null && effectiveUserId.equals(project.getUserId())) {
+            if (!isSubUser) {
+                return true;
+            }
+            return PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus());
+        }
+        return PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus()) && isAssignedApprovalRole(project, principalNames);
+    }
+
+    private Project findAccessibleProject(Integer id,
+                                          boolean isAdmin,
+                                          boolean isSubUser,
+                                          String effectiveUserId,
+                                          String... principalNames) {
+        Project project = projectRepository.findById(id).orElse(null);
+        if (!canAccessProject(project, isAdmin, isSubUser, effectiveUserId, principalNames)) {
+            return null;
+        }
+        return project;
+    }
+
+    private List<Project> listVisibleProjectsForUser(boolean isAdmin,
+                                                     boolean isSubUser,
+                                                     String userId,
+                                                     String effectiveUserId,
+                                                     String... principalNames) {
+        if (isAdmin) {
+            return projectRepository.findAllOrderByCreatedAtDesc();
+        }
+        List<Project> own = isSubUser
+                ? projectRepository.findByUserIdAndStatusOrderByCreatedAtDesc(effectiveUserId, PROJECT_STATUS_IN_PROGRESS)
+                : projectRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        Map<Integer, Project> merged = new HashMap<>();
+        for (Project p : own) {
+            merged.put(p.getId(), p);
+        }
+        if (principalNames != null && principalNames.length > 0) {
+            List<Project> all = projectRepository.findAllOrderByCreatedAtDesc();
+            for (Project p : all) {
+                if (!PROJECT_STATUS_IN_PROGRESS.equals(p.getStatus())) {
+                    continue;
+                }
+                if (isAssignedApprovalRole(p, principalNames)) {
+                    merged.putIfAbsent(p.getId(), p);
+                }
+            }
+        }
+        return merged.values().stream()
+                .sorted(Comparator.comparing(Project::getCreatedAt).reversed())
+                .collect(Collectors.toList());
+    }
     @GetMapping("/my-todos")
     @Transactional
     public ResponseEntity<List<ProjectDTOs.TodoItem>> getMyTodos(Authentication authentication) {
         try {
             CustomUserPrincipal userPrincipal = (CustomUserPrincipal) authentication.getPrincipal();
             com.reportweb.entity.User currentUser = userPrincipal.getUser();
-            String fullName = currentUser.getFullName();
-            if (fullName == null || fullName.isBlank()) {
+            String[] principalNames = principalNames(currentUser);
+            if (principalNames.length == 0) {
                 return ResponseEntity.ok(new ArrayList<>());
             }
             String userId = currentUser.getId();
@@ -126,14 +255,8 @@ public class ProjectsController {
             String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
                     ? currentUser.getParentUserId() : userId;
 
-            List<Project> projects;
-            if (isAdmin) {
-                projects = projectRepository.findAllOrderByCreatedAtDesc();
-            } else if (isSubUser) {
-                projects = projectRepository.findByUserIdAndStatusOrderByCreatedAtDesc(effectiveUserId, PROJECT_STATUS_IN_PROGRESS);
-            } else {
-                projects = projectRepository.findByUserIdOrderByCreatedAtDesc(userId);
-            }
+            List<Project> projects = listVisibleProjectsForUser(
+                    isAdmin, isSubUser, userId, effectiveUserId, principalNames);
 
             List<ProjectDTOs.TodoItem> todos = new ArrayList<>();
             for (Project p : projects) {
@@ -141,18 +264,18 @@ public class ProjectsController {
                 int ndt = p.getApprovalStepNdt() != null ? p.getApprovalStepNdt() : 0;
                 int chem = p.getApprovalStepChem() != null ? p.getApprovalStepChem() : 0;
                 // NDT: 步骤0且我是编写人；步骤1且我是审核人；步骤2且我是批准人
-                if (ndt < STEP_APPROVED && Objects.equals(p.getWriterNdt(), fullName) && ndt == STEP_WRITER) {
+                if (ndt < STEP_APPROVED && matchesAnyName(p.getWriterNdt(), principalNames) && ndt == STEP_WRITER) {
                     todos.add(buildTodoItem(p, "ndt", "writer", ndt));
-                } else if (ndt == STEP_PENDING_REVIEW && Objects.equals(p.getReviewerNdt(), fullName)) {
+                } else if (ndt == STEP_PENDING_REVIEW && matchesAnyName(p.getReviewerNdt(), principalNames)) {
                     todos.add(buildTodoItem(p, "ndt", "reviewer", ndt));
-                } else if (ndt == STEP_PENDING_APPROVAL && Objects.equals(p.getApproverNdt(), fullName)) {
+                } else if (ndt == STEP_PENDING_APPROVAL && matchesAnyName(p.getApproverNdt(), principalNames)) {
                     todos.add(buildTodoItem(p, "ndt", "approver", ndt));
                 }
-                if (chem < STEP_APPROVED && Objects.equals(p.getWriterChem(), fullName) && chem == STEP_WRITER) {
+                if (chem < STEP_APPROVED && matchesAnyName(p.getWriterChem(), principalNames) && chem == STEP_WRITER) {
                     todos.add(buildTodoItem(p, "chem", "writer", chem));
-                } else if (chem == STEP_PENDING_REVIEW && Objects.equals(p.getReviewerChem(), fullName)) {
+                } else if (chem == STEP_PENDING_REVIEW && matchesAnyName(p.getReviewerChem(), principalNames)) {
                     todos.add(buildTodoItem(p, "chem", "reviewer", chem));
-                } else if (chem == STEP_PENDING_APPROVAL && Objects.equals(p.getApproverChem(), fullName)) {
+                } else if (chem == STEP_PENDING_APPROVAL && matchesAnyName(p.getApproverChem(), principalNames)) {
                     todos.add(buildTodoItem(p, "chem", "approver", chem));
                 }
             }
@@ -201,8 +324,8 @@ public class ProjectsController {
         try {
             CustomUserPrincipal userPrincipal = (CustomUserPrincipal) authentication.getPrincipal();
             com.reportweb.entity.User currentUser = userPrincipal.getUser();
-            String fullName = currentUser.getFullName();
-            if (fullName == null || fullName.isBlank()) {
+            String[] principalNames = principalNames(currentUser);
+            if (principalNames.length == 0) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "用户姓名为空，无法提交审批"));
             }
             String userId = currentUser.getId();
@@ -211,12 +334,7 @@ public class ProjectsController {
             String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
                     ? currentUser.getParentUserId() : userId;
 
-            Project project;
-            if (isAdmin) {
-                project = projectRepository.findById(id).orElse(null);
-            } else {
-                project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
-            }
+            Project project = findAccessibleProject(id, isAdmin, isSubUser, effectiveUserId, principalNames);
             if (project == null || !PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus())) {
                 return ResponseEntity.notFound().build();
             }
@@ -226,11 +344,9 @@ public class ProjectsController {
 
             String track = body != null && body.getTrack() != null ? body.getTrack().toLowerCase() : "both";
             boolean doNdt = ("ndt".equals(track) || "both".equals(track))
-                    && Objects.equals(project.getWriterNdt(), fullName)
-                    && (project.getApprovalStepNdt() == null || project.getApprovalStepNdt() == STEP_WRITER);
+                    && canSubmitAtWriterStep(project, "ndt", principalNames);
             boolean doChem = ("chem".equals(track) || "both".equals(track))
-                    && Objects.equals(project.getWriterChem(), fullName)
-                    && (project.getApprovalStepChem() == null || project.getApprovalStepChem() == STEP_WRITER);
+                    && canSubmitAtWriterStep(project, "chem", principalNames);
 
             if (!doNdt && !doChem) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "仅编写人可提交审批，且当前步骤须为编写"));
@@ -244,7 +360,7 @@ public class ProjectsController {
                 logNdt.setProjectId(id);
                 logNdt.setTrack("ndt");
                 logNdt.setAction("submit");
-                logNdt.setActorName(fullName);
+                logNdt.setActorName(principalNames[0]);
                 approvalLogRepository.save(logNdt);
             }
             if (doChem) {
@@ -252,7 +368,7 @@ public class ProjectsController {
                 logChem.setProjectId(id);
                 logChem.setTrack("chem");
                 logChem.setAction("submit");
-                logChem.setActorName(fullName);
+                logChem.setActorName(principalNames[0]);
                 approvalLogRepository.save(logChem);
             }
             return ResponseEntity.noContent().build();
@@ -278,8 +394,8 @@ public class ProjectsController {
             }
             CustomUserPrincipal userPrincipal = (CustomUserPrincipal) authentication.getPrincipal();
             com.reportweb.entity.User currentUser = userPrincipal.getUser();
-            String fullName = currentUser.getFullName();
-            if (fullName == null || fullName.isBlank()) {
+            String[] principalNames = principalNames(currentUser);
+            if (principalNames.length == 0) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "用户姓名为空"));
             }
             String userId = currentUser.getId();
@@ -288,22 +404,17 @@ public class ProjectsController {
             String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
                     ? currentUser.getParentUserId() : userId;
 
-            Project project;
-            if (isAdmin) {
-                project = projectRepository.findById(id).orElse(null);
-            } else {
-                project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
-            }
+            Project project = findAccessibleProject(id, isAdmin, isSubUser, effectiveUserId, principalNames);
             if (project == null || !PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus())) {
                 return ResponseEntity.notFound().build();
             }
 
             if ("ndt".equals(track)) {
                 int step = project.getApprovalStepNdt() != null ? project.getApprovalStepNdt() : 0;
-                if (step == STEP_PENDING_REVIEW && Objects.equals(project.getReviewerNdt(), fullName)) {
+                if (step == STEP_PENDING_REVIEW && matchesAnyName(project.getReviewerNdt(), principalNames)) {
                     project.setApprovalStepNdt(STEP_PENDING_APPROVAL);
                     project.setReviewDateNdt(LocalDate.now());
-                } else if (step == STEP_PENDING_APPROVAL && Objects.equals(project.getApproverNdt(), fullName)) {
+                } else if (step == STEP_PENDING_APPROVAL && matchesAnyName(project.getApproverNdt(), principalNames)) {
                     project.setApprovalStepNdt(STEP_APPROVED);
                     project.setApprovalDateNdt(LocalDate.now());
                     project.setRejectionStepNdt(null);
@@ -312,10 +423,10 @@ public class ProjectsController {
                 }
             } else {
                 int step = project.getApprovalStepChem() != null ? project.getApprovalStepChem() : 0;
-                if (step == STEP_PENDING_REVIEW && Objects.equals(project.getReviewerChem(), fullName)) {
+                if (step == STEP_PENDING_REVIEW && matchesAnyName(project.getReviewerChem(), principalNames)) {
                     project.setApprovalStepChem(STEP_PENDING_APPROVAL);
                     project.setReviewDateChem(LocalDate.now());
-                } else if (step == STEP_PENDING_APPROVAL && Objects.equals(project.getApproverChem(), fullName)) {
+                } else if (step == STEP_PENDING_APPROVAL && matchesAnyName(project.getApproverChem(), principalNames)) {
                     project.setApprovalStepChem(STEP_APPROVED);
                     project.setApprovalDateChem(LocalDate.now());
                     project.setRejectionStepChem(null);
@@ -334,7 +445,7 @@ public class ProjectsController {
             logEntry.setProjectId(id);
             logEntry.setTrack(track);
             logEntry.setAction("pass");
-            logEntry.setActorName(fullName);
+            logEntry.setActorName(principalNames[0]);
             approvalLogRepository.save(logEntry);
             return ResponseEntity.noContent().build();
         } catch (Exception ex) {
@@ -359,8 +470,8 @@ public class ProjectsController {
             }
             CustomUserPrincipal userPrincipal = (CustomUserPrincipal) authentication.getPrincipal();
             com.reportweb.entity.User currentUser = userPrincipal.getUser();
-            String fullName = currentUser.getFullName();
-            if (fullName == null || fullName.isBlank()) {
+            String[] principalNames = principalNames(currentUser);
+            if (principalNames.length == 0) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "用户姓名为空"));
             }
             String userId = currentUser.getId();
@@ -369,20 +480,15 @@ public class ProjectsController {
             String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
                     ? currentUser.getParentUserId() : userId;
 
-            Project project;
-            if (isAdmin) {
-                project = projectRepository.findById(id).orElse(null);
-            } else {
-                project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
-            }
+            Project project = findAccessibleProject(id, isAdmin, isSubUser, effectiveUserId, principalNames);
             if (project == null || !PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus())) {
                 return ResponseEntity.notFound().build();
             }
 
             if ("ndt".equals(track)) {
                 int step = project.getApprovalStepNdt() != null ? project.getApprovalStepNdt() : 0;
-                if ((step == STEP_PENDING_REVIEW && Objects.equals(project.getReviewerNdt(), fullName))
-                        || (step == STEP_PENDING_APPROVAL && Objects.equals(project.getApproverNdt(), fullName))) {
+                if ((step == STEP_PENDING_REVIEW && matchesAnyName(project.getReviewerNdt(), principalNames))
+                        || (step == STEP_PENDING_APPROVAL && matchesAnyName(project.getApproverNdt(), principalNames))) {
                     project.setApprovalStepNdt(STEP_WRITER);
                     project.setRejectionStepNdt(step);
                 } else {
@@ -390,8 +496,8 @@ public class ProjectsController {
                 }
             } else {
                 int step = project.getApprovalStepChem() != null ? project.getApprovalStepChem() : 0;
-                if ((step == STEP_PENDING_REVIEW && Objects.equals(project.getReviewerChem(), fullName))
-                        || (step == STEP_PENDING_APPROVAL && Objects.equals(project.getApproverChem(), fullName))) {
+                if ((step == STEP_PENDING_REVIEW && matchesAnyName(project.getReviewerChem(), principalNames))
+                        || (step == STEP_PENDING_APPROVAL && matchesAnyName(project.getApproverChem(), principalNames))) {
                     project.setApprovalStepChem(STEP_WRITER);
                     project.setRejectionStepChem(step);
                 } else {
@@ -404,7 +510,7 @@ public class ProjectsController {
             logEntry.setProjectId(id);
             logEntry.setTrack(track);
             logEntry.setAction("reject");
-            logEntry.setActorName(fullName);
+            logEntry.setActorName(principalNames[0]);
             approvalLogRepository.save(logEntry);
             return ResponseEntity.noContent().build();
         } catch (Exception ex) {
@@ -576,15 +682,9 @@ public class ProjectsController {
                 effectiveUserId = currentUser.getParentUserId();
             }
 
-            // 管理员可以查看所有项目；普通用户看自己的；子账号只看主账号的进行中项目
-            List<Project> projects;
-            if (isAdmin) {
-                projects = projectRepository.findAllOrderByCreatedAtDesc();
-            } else if (isSubUser) {
-                projects = projectRepository.findByUserIdAndStatusOrderByCreatedAtDesc(effectiveUserId, PROJECT_STATUS_IN_PROGRESS);
-            } else {
-                projects = projectRepository.findByUserIdOrderByCreatedAtDesc(userId);
-            }
+            // 管理员看全量；普通/子账号看归属项目 + 自身被分配审批角色的进行中项目
+            List<Project> projects = listVisibleProjectsForUser(
+                    isAdmin, isSubUser, userId, effectiveUserId, principalNames(currentUser));
 
             // 触发懒加载，避免LazyInitializationException
             for (Project project : projects) {
@@ -670,12 +770,7 @@ public class ProjectsController {
                     ? currentUser.getParentUserId() : userId;
 
             // 管理员可查看任何项目；普通用户/子账号只能查看归属 effectiveUserId 的项目；子账号仅能看进行中
-            Project project;
-            if (isAdmin) {
-                project = projectRepository.findById(id).orElse(null);
-            } else {
-                project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
-            }
+            Project project = findAccessibleProject(id, isAdmin, isSubUser, effectiveUserId, principalNames(currentUser));
 
             if (project == null) {
                 return ResponseEntity.notFound().build();
@@ -724,17 +819,10 @@ public class ProjectsController {
             boolean isSubUser = UserRoleUtils.isSubUser(currentUser);
             String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
                     ? currentUser.getParentUserId() : userId;
+            String[] principalNames = principalNames(currentUser);
 
-            Project project;
-            if (isAdmin) {
-                project = projectRepository.findById(id).orElse(null);
-            } else {
-                project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
-            }
+            Project project = findAccessibleProject(id, isAdmin, isSubUser, effectiveUserId, principalNames);
             if (project == null) {
-                return ResponseEntity.notFound().build();
-            }
-            if (isSubUser && !PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus())) {
                 return ResponseEntity.notFound().build();
             }
 
@@ -808,17 +896,10 @@ public class ProjectsController {
             boolean isSubUser = UserRoleUtils.isSubUser(currentUser);
             String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
                     ? currentUser.getParentUserId() : userId;
+            String[] principalNames = principalNames(currentUser);
 
-            Project project;
-            if (isAdmin) {
-                project = projectRepository.findById(id).orElse(null);
-            } else {
-                project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
-            }
+            Project project = findAccessibleProject(id, isAdmin, isSubUser, effectiveUserId, principalNames);
             if (project == null) {
-                return ResponseEntity.notFound().build();
-            }
-            if (isSubUser && !PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus())) {
                 return ResponseEntity.notFound().build();
             }
 
@@ -849,17 +930,10 @@ public class ProjectsController {
             boolean isSubUser = UserRoleUtils.isSubUser(currentUser);
             String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
                     ? currentUser.getParentUserId() : userId;
+            String[] principalNames = principalNames(currentUser);
 
-            Project project;
-            if (isAdmin) {
-                project = projectRepository.findById(id).orElse(null);
-            } else {
-                project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
-            }
+            Project project = findAccessibleProject(id, isAdmin, isSubUser, effectiveUserId, principalNames);
             if (project == null) {
-                return ResponseEntity.notFound().build();
-            }
-            if (isSubUser && !PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus())) {
                 return ResponseEntity.notFound().build();
             }
 

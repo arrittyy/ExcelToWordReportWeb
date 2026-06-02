@@ -1008,9 +1008,23 @@ const ApprovalFlowCard: React.FC<ApprovalFlowCardProps> = ({
       { key: 2, role: '批准', name: approver, date: approvalDate },
     ];
     const isCurrentNode = (nodeKey: number) => step === nodeKey;
-    const showSubmit = track === 'ndt' ? project.writerNdt === fullName : project.writerChem === fullName;
-    const showPassRejectReviewer = track === 'ndt' ? project.reviewerNdt === fullName : project.reviewerChem === fullName;
-    const showPassRejectApprover = track === 'ndt' ? project.approverNdt === fullName : project.approverChem === fullName;
+    const principalNames = [
+      fullName || '',
+    ].filter((n, idx, arr) => n && arr.indexOf(n) === idx);
+    const matchesPrincipal = (name?: string) => {
+      const roleName = (name || '').trim();
+      return roleName !== '' && principalNames.includes(roleName);
+    };
+    const isResponsible = matchesPrincipal(project.responsiblePerson);
+    const showSubmit = track === 'ndt'
+      ? matchesPrincipal(project.writerNdt) || isResponsible
+      : matchesPrincipal(project.writerChem) || isResponsible;
+    const showPassRejectReviewer = track === 'ndt'
+      ? matchesPrincipal(project.reviewerNdt)
+      : matchesPrincipal(project.reviewerChem);
+    const showPassRejectApprover = track === 'ndt'
+      ? matchesPrincipal(project.approverNdt)
+      : matchesPrincipal(project.approverChem);
 
     return (
       <div style={{ marginBottom: 24 }}>
@@ -1383,7 +1397,7 @@ const ProjectDetailPage: React.FC = () => {
   const { id } = useParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const fullName = user?.fullName?.trim() || '';
+  const fullName = user?.fullName?.trim() || user?.username?.trim() || '';
 
   // 状态管理
   const [activeExperimentTypes, setActiveExperimentTypes] = useState<ActiveExperimentType[]>([]);

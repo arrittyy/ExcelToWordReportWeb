@@ -124,6 +124,25 @@ public class DetectionContentNarrativeService {
         return normalizeExportDetectionNarrativeBody(override);
     }
 
+    private static boolean isBlankOrSlash(String s) {
+        if (s == null) {
+            return true;
+        }
+        String t = s.trim();
+        return t.isEmpty() || "/".equals(t) || "／".equals(t);
+    }
+
+    private String dualTextareaPositionText(JsonNode node) {
+        if (node == null || !node.has("position") || node.get("position").isNull()) {
+            return "";
+        }
+        String position = node.get("position").asText("");
+        if (isBlankOrSlash(position)) {
+            return "";
+        }
+        return extractNarrativeBodyFromWordDetectionCell(position);
+    }
+
     /** 用户填入的「总计 / 位置描述 / 编号」末尾常见标点，避免与系统拼接的逗号、句号重复。 */
     private static final String FIELD_TRAILING_PUNCT = "。．，、；：,.;:!?！?";
 
@@ -415,6 +434,11 @@ public class DetectionContentNarrativeService {
                             ? experimentType.getName() : "目视检测";
                     return new DetectionContentDetail(methodNameVis, componentName, type, total, locationDesc, locationNumber);
                 }
+                if (node.has("mode") && "dual-textarea".equals(node.get("mode").asText())) {
+                    String position = dualTextareaPositionText(node);
+                    locationDesc = position;
+                    return new DetectionContentDetail(methodName, componentName, type, total, locationDesc, locationNumber);
+                }
                 if (node.has("rows") && node.get("rows").isArray() && node.get("rows").size() > 0) {
                     JsonNode rows = node.get("rows");
                     int idx = Math.min(Math.max(0, rowIndex), rows.size() - 1);
@@ -484,6 +508,10 @@ public class DetectionContentNarrativeService {
         }
         try {
             JsonNode node = objectMapper.readTree(objectMapper.writeValueAsString(report.getDetectionContent()));
+            if (node.has("mode") && "dual-textarea".equals(node.get("mode").asText())) {
+                // dual-textarea 仍走统一叙述拼接，保证“检测部件”改动能反映到正文
+                return single;
+            }
             if (node.has("mode") && "visual-groups".equals(node.get("mode").asText())) {
                 return single;
             }

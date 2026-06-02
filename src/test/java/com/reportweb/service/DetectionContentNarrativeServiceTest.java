@@ -209,6 +209,23 @@ class DetectionContentNarrativeServiceTest {
     }
 
     @Test
+    void buildDetectionContentNarrativeBody_dualTextarea_usesPositionText() {
+        ExperimentType met = new ExperimentType();
+        met.setCode("MET");
+        met.setName("金相检测");
+        Report report = new Report();
+        report.setComponentName("再热器出口联箱");
+        report.setDetectionContent(Map.of(
+                "mode", "dual-textarea",
+                "position", "高温再热器出口联箱母材区域",
+                "conclusion", "组织正常"));
+
+        String body = service.buildDetectionContentNarrativeBody(report, met);
+        assertTrue(body.contains("金相检测再热器出口联箱"), "应包含检测方法与检测部件");
+        assertTrue(body.contains("具体位置：再热器出口联箱高温再热器出口联箱母材区域"), "应包含检测部位位置描述");
+    }
+
+    @Test
     void appendFigureSuffixIfAbsent_onlyWhenMissing() {
         String base = "检测部位:\n    叙述正文。";
         String once = DetectionContentNarrativeService.appendFigureSuffixIfAbsent(base, true);

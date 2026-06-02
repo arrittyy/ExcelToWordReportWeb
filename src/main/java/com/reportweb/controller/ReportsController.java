@@ -60,6 +60,7 @@ import java.util.stream.Collectors;
 public class ReportsController {
 
     private static final int BATCH_MERGE_WORD_MAX_IDS = 50;
+    private static final String OVERVIEW_WORK_REPORT_REF_MARKER = "详见后附单项报告编号";
 
     private final ReportRepository reportRepository;
     private final ReportItemRepository reportItemRepository;
@@ -782,6 +783,10 @@ public class ReportsController {
                 }
             }
 
+            if (experimentType != null && "MET".equalsIgnoreCase(experimentType.getCode())) {
+                forceRefreshMetExportOverrides(report, experimentType);
+            }
+
             syncAatProjectComponentsIfNeeded(report, experimentType);
 
             List<ProjectComponent> defectComponentsUpdate = reportComponentMergeHelper.loadOrdered(
@@ -1114,6 +1119,22 @@ public class ReportsController {
             return sub;
         }
         return reportAccessibleToProjectOwner(currentUser, reportId);
+    }
+
+    private void forceRefreshMetExportOverrides(Report report, ExperimentType experimentType) {
+        String narrative = detectionContentNarrativeService.buildDetectionContentNarrativeBody(report, experimentType);
+        String reportNumber = report.getReportNumber() != null ? report.getReportNumber().trim() : "";
+        String experimentTypeName = experimentType.getName() != null ? experimentType.getName().trim() : "";
+        String prefix = !narrative.isBlank()
+                ? narrative
+                : (experimentTypeName.isBlank() ? "{需要填写检测方法}" : experimentTypeName);
+        String workLine = DetectionContentNarrativeService.stripFigureReferencePhrases(
+                prefix + OVERVIEW_WORK_REPORT_REF_MARKER + reportNumber + "。");
+
+        Map<String, String> patch = new LinkedHashMap<>();
+        patch.put(ExportTextOverrides.DETECTION_NARRATIVE_BODY, narrative);
+        patch.put(ExportTextOverrides.OVERVIEW_WORK_CONTENT_LINE, workLine);
+        report.setCustomFields(ExportTextOverrides.mergeIntoCustomFields(report.getCustomFields(), patch, 0));
     }
 
     /** 主账号：报告所属项目的 owner 为当前用户 */
