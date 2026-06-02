@@ -145,6 +145,43 @@ public class ProjectDTOs {
     }
 
     @Data
+    public static class ReportChangeLogItem {
+        private Long id;
+        private Integer projectId;
+        private Integer reportId;
+        private String action;
+        private Integer experimentTypeId;
+        private String experimentTypeName;
+        private String experimentTypeCode;
+        private String reportNumber;
+        private String testMethod;
+        private String status;
+        private java.util.Map<String, Object> changeSummary;
+        private String operatorUserId;
+        private String operatorUserName;
+        private String source;
+        private java.time.LocalDateTime createdAt;
+        /** 报告已删除时为 true，仅展示用，不可跳转详情 */
+        private Boolean reportDeleted;
+    }
+
+    @Data
+    public static class ReportChangeLogSummaryRow {
+        private Integer experimentTypeId;
+        private String experimentTypeName;
+        private String experimentTypeCode;
+        private long createdCount;
+        private long updatedCount;
+        private long deletedCount;
+        private long currentReportCount;
+    }
+
+    @Data
+    public static class ReportChangeLogSummaryResponse {
+        private List<ReportChangeLogSummaryRow> byExperimentType;
+    }
+
+    @Data
     public static class CreateProject {
         @NotBlank(message = "项目编号不能为空")
         @Size(max = 50, message = "项目编号长度不能超过50个字符")

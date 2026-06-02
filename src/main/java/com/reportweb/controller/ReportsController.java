@@ -29,6 +29,7 @@ import com.reportweb.service.DetectionContentAutoFillService;
 import com.reportweb.service.DetectionContentNarrativeService;
 import com.reportweb.service.ReportComponentMergeHelper;
 import com.reportweb.service.ProjectComponentSyncService;
+import com.reportweb.service.ReportChangeLogService;
 import com.reportweb.util.ExportTextOverrides;
 import com.reportweb.util.JsonScalarStringNormalizer;
 import jakarta.validation.Valid;
@@ -73,6 +74,7 @@ public class ReportsController {
     private final ReportComponentMergeHelper reportComponentMergeHelper;
     private final ProjectComponentSyncService projectComponentSyncService;
     private final DetectionContentNarrativeService detectionContentNarrativeService;
+    private final ReportChangeLogService reportChangeLogService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @GetMapping
@@ -616,6 +618,8 @@ public class ReportsController {
             }
 
             reportRepository.save(savedReport);
+            reportChangeLogService.recordCreated(
+                    savedReport, userPrincipal.getUser(), ReportChangeLogService.SOURCE_USER_SAVE);
 
             // 保存附图
             if (createReportDTO.getImageAttachments() != null && !createReportDTO.getImageAttachments().isEmpty()) {
@@ -678,6 +682,9 @@ public class ReportsController {
                 log.error("报告未找到或用户无权限访问 reportId={}, userId={}", id, userId);
                 return ResponseEntity.notFound().build();
             }
+
+            ReportChangeLogService.ReportMetadataSnapshot metadataBefore =
+                    reportChangeLogService.captureMetadata(report);
 
             // 更新基本信息
             report.setProjectId(updateReportDTO.getProjectId());
@@ -810,6 +817,9 @@ public class ReportsController {
                 }
             }
 
+            reportChangeLogService.recordUpdatedFromSnapshot(
+                    metadataBefore, report, currentUser, ReportChangeLogService.SOURCE_USER_SAVE);
+
             log.info("报告更新完成 - ID: {}", id);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException ex) {
@@ -838,6 +848,7 @@ public class ReportsController {
                 return ResponseEntity.notFound().build();
             }
 
+            reportChangeLogService.recordDeleted(report, currentUser, ReportChangeLogService.SOURCE_USER_SAVE);
             reportRepository.delete(report);
             return ResponseEntity.noContent().build();
         } catch (Exception ex) {
@@ -1022,6 +1033,8 @@ public class ReportsController {
                 }
             }
 
+            reportChangeLogService.recordDeletedAll(reports, currentUser, ReportChangeLogService.SOURCE_BATCH_DELETE);
+
             // 批量删除
             reportRepository.deleteAllById(ids);
 
@@ -1062,8 +1075,12 @@ public class ReportsController {
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)
                             .body(Map.of("message", "无权修改报告ID: " + report.getId()));
                 }
+                ReportChangeLogService.ReportMetadataSnapshot before =
+                        reportChangeLogService.captureMetadata(report);
                 report.setStatus(request.getStatus());
                 report.setUpdatedAt(LocalDateTime.now());
+                reportChangeLogService.recordUpdatedFromSnapshot(
+                        before, report, currentUser, ReportChangeLogService.SOURCE_BATCH_STATUS);
             }
 
             // 批量更新

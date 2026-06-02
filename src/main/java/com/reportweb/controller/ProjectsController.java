@@ -37,6 +37,9 @@ import com.reportweb.service.DetectionContentNarrativeService;
 import com.reportweb.service.WordExportJobRunner;
 import com.reportweb.service.WordExportJobService;
 import com.reportweb.service.WordGeneratorService;
+import com.reportweb.service.ReportChangeLogService;
+import com.reportweb.entity.ProjectReportChangeLog;
+import com.reportweb.repository.ProjectReportChangeLogRepository;
 import com.reportweb.service.ndt.NdtQualificationRegistry;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -86,6 +89,8 @@ public class ProjectsController {
     private final ProjectInstrumentRepository projectInstrumentRepository;
     private final ReportRepository reportRepository;
     private final ApprovalLogRepository approvalLogRepository;
+    private final ProjectReportChangeLogRepository projectReportChangeLogRepository;
+    private final ReportChangeLogService reportChangeLogService;
     private final PowerPlantRepository powerPlantRepository;
     private final UnitRepository unitRepository;
     private final ExperimentTypeRepository experimentTypeRepository;
@@ -445,6 +450,116 @@ public class ProjectsController {
             log.error("Error getting approval logs for project id: {}", id, ex);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @GetMapping("/{id}/report-change-logs")
+    public ResponseEntity<List<ProjectDTOs.ReportChangeLogItem>> getReportChangeLogs(
+            @PathVariable Integer id,
+            @RequestParam(name = "limit", defaultValue = "500") int limit,
+            @RequestParam(name = "offset", defaultValue = "0") int offset,
+            Authentication authentication) {
+        try {
+            Project project = resolveProjectForRead(id, authentication);
+            if (project == null) {
+                return ResponseEntity.notFound().build();
+            }
+            int safeLimit = Math.min(Math.max(limit, 1), 2000);
+            int safeOffset = Math.max(offset, 0);
+            List<ProjectReportChangeLog> logs = projectReportChangeLogRepository.findByProjectIdOrderByCreatedAtDesc(
+                    id, org.springframework.data.domain.PageRequest.of(safeOffset / safeLimit, safeLimit));
+            Set<Integer> existingReportIds = reportRepository.findByProjectIdOrderById(id).stream()
+                    .map(Report::getId)
+                    .collect(Collectors.toSet());
+            List<ProjectDTOs.ReportChangeLogItem> items = logs.stream()
+                    .map(log -> toReportChangeLogItem(log, existingReportIds))
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(items);
+        } catch (Exception ex) {
+            log.error("Error getting report change logs for project id: {}", id, ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/{id}/report-change-summary")
+    public ResponseEntity<ProjectDTOs.ReportChangeLogSummaryResponse> getReportChangeSummary(
+            @PathVariable Integer id,
+            Authentication authentication) {
+        try {
+            Project project = resolveProjectForRead(id, authentication);
+            if (project == null) {
+                return ResponseEntity.notFound().build();
+            }
+            Map<Integer, Long> currentCounts = new HashMap<>();
+            for (Object[] row : reportRepository.countByProjectIdGroupByExperimentTypeId(id)) {
+                currentCounts.put((Integer) row[0], (Long) row[1]);
+            }
+            List<ProjectDTOs.ReportChangeLogSummaryRow> rows = projectReportChangeLogRepository
+                    .aggregateByExperimentType(id).stream()
+                    .map(p -> {
+                        ProjectDTOs.ReportChangeLogSummaryRow row = new ProjectDTOs.ReportChangeLogSummaryRow();
+                        row.setExperimentTypeId(p.getExperimentTypeId());
+                        row.setExperimentTypeName(p.getExperimentTypeName());
+                        row.setExperimentTypeCode(p.getExperimentTypeCode());
+                        row.setCreatedCount(p.getCreatedCount() != null ? p.getCreatedCount() : 0L);
+                        row.setUpdatedCount(p.getUpdatedCount() != null ? p.getUpdatedCount() : 0L);
+                        row.setDeletedCount(p.getDeletedCount() != null ? p.getDeletedCount() : 0L);
+                        row.setCurrentReportCount(currentCounts.getOrDefault(p.getExperimentTypeId(), 0L));
+                        return row;
+                    })
+                    .collect(Collectors.toList());
+            ProjectDTOs.ReportChangeLogSummaryResponse response = new ProjectDTOs.ReportChangeLogSummaryResponse();
+            response.setByExperimentType(rows);
+            return ResponseEntity.ok(response);
+        } catch (Exception ex) {
+            log.error("Error getting report change summary for project id: {}", id, ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    private Project resolveProjectForRead(Integer id, Authentication authentication) {
+        CustomUserPrincipal userPrincipal = (CustomUserPrincipal) authentication.getPrincipal();
+        com.reportweb.entity.User currentUser = userPrincipal.getUser();
+        String userId = currentUser.getId();
+        boolean isAdmin = UserRoleUtils.isAdmin(currentUser);
+        boolean isSubUser = UserRoleUtils.isSubUser(currentUser);
+        String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
+                ? currentUser.getParentUserId() : userId;
+        Project project;
+        if (isAdmin) {
+            project = projectRepository.findById(id).orElse(null);
+        } else {
+            project = projectRepository.findByIdAndUserId(id, effectiveUserId).orElse(null);
+        }
+        if (project == null) {
+            return null;
+        }
+        if (isSubUser && !PROJECT_STATUS_IN_PROGRESS.equals(project.getStatus())) {
+            return null;
+        }
+        return project;
+    }
+
+    private static ProjectDTOs.ReportChangeLogItem toReportChangeLogItem(
+            ProjectReportChangeLog log, Set<Integer> existingReportIds) {
+        ProjectDTOs.ReportChangeLogItem item = new ProjectDTOs.ReportChangeLogItem();
+        item.setId(log.getId());
+        item.setProjectId(log.getProjectId());
+        item.setReportId(log.getReportId());
+        item.setAction(log.getAction());
+        item.setExperimentTypeId(log.getExperimentTypeId());
+        item.setExperimentTypeName(log.getExperimentTypeName());
+        item.setExperimentTypeCode(log.getExperimentTypeCode());
+        item.setReportNumber(log.getReportNumber());
+        item.setTestMethod(log.getTestMethod());
+        item.setStatus(log.getStatus());
+        item.setChangeSummary(log.getChangeSummary());
+        item.setOperatorUserId(log.getOperatorUserId());
+        item.setOperatorUserName(log.getOperatorUserName());
+        item.setSource(log.getSource());
+        item.setCreatedAt(log.getCreatedAt());
+        boolean deleted = !existingReportIds.contains(log.getReportId());
+        item.setReportDeleted(deleted);
+        return item;
     }
 
     @GetMapping
@@ -1018,6 +1133,8 @@ public class ProjectsController {
             // 级联删除关联的报告
             List<Report> reports = reportRepository.findByProjectIdOrderById(id);
             if (!reports.isEmpty()) {
+                reportChangeLogService.recordDeletedAll(
+                        reports, currentUser, ReportChangeLogService.SOURCE_PROJECT_DELETE);
                 reportRepository.deleteAll(reports);
             }
 

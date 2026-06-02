@@ -25,6 +25,9 @@ public interface ReportRepository extends JpaRepository<Report, Integer> {
     List<Report> findByUserIdAndOptionalProjectId(@Param("userId") String userId, @Param("projectId") Integer projectId);
     
     List<Report> findByProjectIdOrderById(Integer projectId);
+
+    @Query("SELECT r.experimentTypeId, COUNT(r) FROM Report r WHERE r.projectId = :projectId GROUP BY r.experimentTypeId")
+    List<Object[]> countByProjectIdGroupByExperimentTypeId(@Param("projectId") Integer projectId);
     
     /**
      * 查询所有报告（按ID排序）

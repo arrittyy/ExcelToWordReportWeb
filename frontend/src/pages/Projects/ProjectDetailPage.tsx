@@ -56,7 +56,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { projectService, type ApprovalLogEntry, type WordExportJob } from '@/services/projectService';
-import { userService } from '@/services/userService';
+import { RUNDIAN_PERSONNEL_NAMES } from '@/constants/rundianPersonnel';
 import { reportService } from '@/services/reportService';
 import { experimentTypeService } from '@/services/experimentTypeService';
 import { componentService, ProjectComponent } from '../../services/componentService';
@@ -104,6 +104,7 @@ import DetectionContentEditor, { DetectionContentConfig } from '@/components/Det
 import ProjectComponentsTable from '@/components/ProjectComponentsTable/ProjectComponentsTable';
 import ProjectInstrumentsTable from '@/components/ProjectInstrumentsTable/ProjectInstrumentsTable';
 import DetectionLog from '@/components/DetectionLog/DetectionLog';
+import ProjectReportChangeLogPanel from '@/components/ProjectReportChangeLog/ProjectReportChangeLogPanel';
 import ReportOverviewOrderModal from '@/components/ReportOverviewOrderModal/ReportOverviewOrderModal';
 import OverviewPreviewModal from '@/components/OverviewPreviewModal/OverviewPreviewModal';
 import LeebHardnessCategorySaveModal from '@/components/LeebHardnessCategorySaveModal/LeebHardnessCategorySaveModal';
@@ -296,7 +297,7 @@ const PROMINENT_ACTION_BTN_SHADOW: React.CSSProperties = {
   boxShadow: '0 2px 8px rgba(15, 23, 42, 0.14), 0 1px 3px rgba(15, 23, 42, 0.08)',
 };
 
-type DetailSectionTabKey = 'detectionLog' | 'components' | 'instruments' | 'reports' | 'approval';
+type DetailSectionTabKey = 'detectionLog' | 'components' | 'instruments' | 'reports' | 'approval' | 'reportChanges';
 
 function extractNonComplianceRecords(customFields: Record<string, any> | undefined) {
   if (!customFields || typeof customFields !== 'object') return [];
@@ -917,26 +918,11 @@ const ApprovalFlowCard: React.FC<ApprovalFlowCardProps> = ({
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [settingForm] = Form.useForm();
 
-  const { data: users = [] } = useQuery({
-    queryKey: ['admin-users'],
-    queryFn: userService.getAllUsers,
-    enabled: settingModalOpen,
-  });
-  const personnelOptions = useMemo(() => {
-    const filtered = users.filter(
-      (u) =>
-        u.role !== 'SUB_USER' &&
-        ((u.role !== 'ADMIN') ||
-          (u.role === 'ADMIN' && u.fullName && String(u.fullName).trim() !== '')) &&
-        !/test|admin|测试/i.test(u.username || '')
-    );
-    return filtered
-      .map((u) => ({
-        label: u.fullName || u.username || u.id,
-        value: u.fullName || u.username || u.id,
-      }))
-      .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
-  }, [users]);
+  const personnelOptions = useMemo(
+    () =>
+      RUNDIAN_PERSONNEL_NAMES.map((name) => ({ label: name, value: name })),
+    [],
+  );
 
   const { data: approvalLogs = [], isLoading: logsLoading } = useQuery({
     queryKey: ['approval-logs', projectId],
@@ -2329,11 +2315,19 @@ const ProjectDetailPage: React.FC = () => {
     };
   }, [project, projectReports]);
 
+  const invalidateReportChangeLogQueries = useCallback(() => {
+    const projectId = Number(id);
+    if (!projectId) return;
+    void queryClient.invalidateQueries({ queryKey: ['report-change-logs', projectId] });
+    void queryClient.invalidateQueries({ queryKey: ['report-change-summary', projectId] });
+  }, [id, queryClient]);
+
   // 创建报告
   const createReportMutation = useMutation({
     mutationFn: (report: CreateReport) => reportService.create(report),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', id] });
+      invalidateReportChangeLogQueries();
       // 不要在这里刷新 projectReports，让 handleSaveReport 处理
     },
     onError: () => {
@@ -2351,6 +2345,7 @@ const ProjectDetailPage: React.FC = () => {
       );
       queryClient.invalidateQueries({ queryKey: ['project', id] });
       queryClient.invalidateQueries({ queryKey: ['projectReports', id] });
+      invalidateReportChangeLogQueries();
       message.success('报告删除成功');
     },
     onError: () => {
@@ -3152,6 +3147,7 @@ const ProjectDetailPage: React.FC = () => {
         
         // ✅ 后台刷新数据,确保与后端同步
         await queryClient.invalidateQueries({ queryKey: ['projectReports', id] });
+        invalidateReportChangeLogQueries();
 
         const savedTypeCreate = activeExperimentTypes.find((aet) => aet.id === typeId);
         if (savedTypeCreate?.experimentType?.code === 'PMI' || savedTypeCreate?.experimentType?.code === 'AAT') {
@@ -3308,6 +3304,7 @@ const ProjectDetailPage: React.FC = () => {
         
         // ✅ 后台刷新数据,确保与后端同步
         await queryClient.invalidateQueries({ queryKey: ['projectReports', id] });
+        invalidateReportChangeLogQueries();
 
         const savedTypeUpdate = activeExperimentTypes.find((aet) => aet.id === typeId);
         if (savedTypeUpdate?.experimentType?.code === 'PMI' || savedTypeUpdate?.experimentType?.code === 'AAT') {
@@ -3828,6 +3825,7 @@ const ProjectDetailPage: React.FC = () => {
 
       // 刷新数据
       queryClient.invalidateQueries({ queryKey: ['projectReports', id] });
+      invalidateReportChangeLogQueries();
     } catch (error) {
       console.error('批量删除失败:', error);
       message.error('批量删除失败');
@@ -5309,6 +5307,16 @@ const ProjectDetailPage: React.FC = () => {
                   queryClient.invalidateQueries({ queryKey: ['projects'] });
                 }}
                 projectId={Number(id)}
+              />
+            ),
+          },
+          {
+            key: 'reportChanges',
+            label: '报告变更记录',
+            children: (
+              <ProjectReportChangeLogPanel
+                projectId={Number(id)}
+                active={detailSectionTab === 'reportChanges'}
               />
             ),
           },

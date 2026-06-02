@@ -219,6 +219,24 @@ export const projectService = {
       return [];
     }
   },
+
+  getReportChangeLogs: async (
+    projectId: number,
+    params?: { limit?: number; offset?: number },
+  ): Promise<ReportChangeLogEntry[]> => {
+    const response = await apiClient.get<ReportChangeLogEntry[]>(
+      `/projects/${projectId}/report-change-logs`,
+      { params },
+    );
+    return response.data ?? [];
+  },
+
+  getReportChangeSummary: async (projectId: number): Promise<ReportChangeLogSummaryResponse> => {
+    const response = await apiClient.get<ReportChangeLogSummaryResponse>(
+      `/projects/${projectId}/report-change-summary`,
+    );
+    return response.data ?? { byExperimentType: [] };
+  },
 };
 
 export interface ApprovalLogEntry {
@@ -228,6 +246,39 @@ export interface ApprovalLogEntry {
   action: string;
   actorName: string;
   createdAt: string;
+}
+
+export interface ReportChangeLogEntry {
+  id: number;
+  projectId: number;
+  reportId: number;
+  action: string;
+  experimentTypeId: number;
+  experimentTypeName: string;
+  experimentTypeCode: string;
+  reportNumber?: string;
+  testMethod?: string;
+  status?: string;
+  changeSummary?: Record<string, unknown>;
+  operatorUserId: string;
+  operatorUserName?: string;
+  source: string;
+  createdAt: string;
+  reportDeleted?: boolean;
+}
+
+export interface ReportChangeLogSummaryRow {
+  experimentTypeId: number;
+  experimentTypeName: string;
+  experimentTypeCode: string;
+  createdCount: number;
+  updatedCount: number;
+  deletedCount: number;
+  currentReportCount: number;
+}
+
+export interface ReportChangeLogSummaryResponse {
+  byExperimentType: ReportChangeLogSummaryRow[];
 }
 
 export type WordExportJobType = 'SUMMARY' | 'THIRD_PARTY' | 'DETECTION_NOTIFICATION';
