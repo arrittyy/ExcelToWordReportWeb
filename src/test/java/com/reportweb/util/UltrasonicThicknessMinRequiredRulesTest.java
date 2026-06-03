@@ -59,6 +59,7 @@ class UltrasonicThicknessMinRequiredRulesTest {
         assertTrue(eval.failedPointNumbers().contains("3"));
     }
 
+    /** 缺陷判定仍用 evaluateRows：无最小厚度时不标 evaluable、不记不合格点 */
     @Test
     void evaluateRows_noMin_returnsNotEvaluable() {
         ArrayNode rows = mapper.createArrayNode();
@@ -67,6 +68,37 @@ class UltrasonicThicknessMinRequiredRulesTest {
                 UltrasonicThicknessMinRequiredRules.evaluateRows(rows, null);
         assertFalse(eval.hasEvaluableRow());
         assertTrue(eval.failedPointNumbers().isEmpty());
+    }
+
+    @Test
+    void resolveConclusionSentence_noMin_treatsAsQualified() {
+        ArrayNode rows = mapper.createArrayNode();
+        rows.add(row("1", "3"));
+        rows.add(row("2", "1"));
+        assertEquals(UltrasonicThicknessMinRequiredRules.CONCLUSION_OK,
+                UltrasonicThicknessMinRequiredRules.resolveConclusionSentence(rows, null));
+        assertEquals(UltrasonicThicknessMinRequiredRules.CONCLUSION_OK,
+                UltrasonicThicknessMinRequiredRules.resolveConclusionSentence(rows, 0.0));
+        assertEquals(UltrasonicThicknessMinRequiredRules.CONCLUSION_OK,
+                UltrasonicThicknessMinRequiredRules.resolveConclusionSentence(rows, -1.0));
+    }
+
+    @Test
+    void resolveConclusionSentence_withMin_failsWhenBelowMin() {
+        ArrayNode rows = mapper.createArrayNode();
+        rows.add(row("1", "9.5"));
+        rows.add(row("3", "7"));
+        assertEquals("在上述检测条件下，3壁厚不满足DL438-2016的要求。",
+                UltrasonicThicknessMinRequiredRules.resolveConclusionSentence(rows, 8.0));
+    }
+
+    @Test
+    void resolveConclusionSentence_withMin_okWhenAllPass() {
+        ArrayNode rows = mapper.createArrayNode();
+        rows.add(row("1", "9.5"));
+        rows.add(row("2", "10"));
+        assertEquals(UltrasonicThicknessMinRequiredRules.CONCLUSION_OK,
+                UltrasonicThicknessMinRequiredRules.resolveConclusionSentence(rows, 8.0));
     }
 
     @Test

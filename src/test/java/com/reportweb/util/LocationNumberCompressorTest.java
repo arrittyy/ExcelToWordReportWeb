@@ -67,7 +67,7 @@ class LocationNumberCompressorTest {
                 "W1-R2-1", "W1-R2-2", "W1-R2-3",
                 "X-自定义"
         ));
-        assertEquals("1~3，W1-R1~2，X-自定义", out);
+        assertEquals("W1-R1~2，X-自定义，1~3", out);
     }
 
     /** 一格内多条「已带尾段」的编号：先按逗号拆 token，再与多行录入一样走二次压缩。 */
@@ -142,8 +142,64 @@ class LocationNumberCompressorTest {
     /** 基准折叠后再按前缀连续尾数合并 */
     @Test
     void mergesFlatLetterNumberRunsAfterCanonicalCollapse() {
-        assertEquals("H5~7", LocationNumberCompressor.compressJoined(List.of("H5-1", "H6-1", "H7-1")));
-        assertEquals("H5，H8~9", LocationNumberCompressor.compressJoined(List.of("H5-1", "H8-1", "H9-1")));
+        assertEquals("H5~H7", LocationNumberCompressor.compressJoined(List.of("H5-1", "H6-1", "H7-1")));
+        assertEquals("H5，H8~H9", LocationNumberCompressor.compressJoined(List.of("H5-1", "H8-1", "H9-1")));
+    }
+
+    /** H10前-1 与 H10-前1 等写法混排 → 单基准 */
+    @Test
+    void mergesDashBeforeAndAfterHanDecoratorsToCanonical() {
+        assertEquals("H10", LocationNumberCompressor.compressJoined(List.of(
+                "H10前-1", "H10-前1", "H10-后2", "H10-1")));
+    }
+
+    /** H10–H13 + W03–W04 全量示例 */
+    @Test
+    void mergesUserReportedHAndWLocationSets() {
+        List<String> tokens = List.of(
+                "H10-前1", "H10-后1", "H10-1",
+                "H10-前3", "H10-后3", "H10-3",
+                "H10-前4", "H10-后4", "H10-4",
+                "H10-前2", "H10-后2", "H10-2",
+                "H11-前1", "H11-后1", "H11-1",
+                "H11-前3", "H11-后3", "H11-3",
+                "H11-前2", "H11-后2", "H11-2",
+                "H11-前4", "H11-后4", "H11-4",
+                "H12-前1", "H12-后1", "H12-1",
+                "H12-前3", "H12-后3", "H12-3",
+                "H12-前2", "H12-后2", "H12-2",
+                "H12-前4", "H12-后4", "H12-4",
+                "H13-前1", "H13-后1", "H13-1",
+                "H13-前3", "H13-后3", "H13-3",
+                "H13-前4", "H13-后4", "H13-4",
+                "H13-前2", "H13-后2", "H13-2",
+                "W03-1", "W03-3", "W03-2", "W03-4",
+                "W04-1", "W04-3", "W04-2", "W04-4"
+        );
+        assertEquals("H10~H13，W03~W04", LocationNumberCompressor.compressJoined(tokens));
+    }
+
+    /** 合并后按字母前缀 A→Z 分组，纯数字组最后；组内保持行序 */
+    @Test
+    void sortsMergedSegmentsByLetterPrefixThenPureDigits() {
+        String out = LocationNumberCompressor.compressJoined(List.of(
+                "A3", "A2", "W2", "W1", "B3", "B2", "A8", "B11",
+                "1", "ST1", "12", "13", "W7", "W8", "W9", "14", "15", "17", "18", "33", "41"
+        ));
+        assertEquals("A2~3，A8，B2~3，B11，ST1，W1~2，W7~9，1，12~15，17~18，33，41", out);
+    }
+
+    @Test
+    void sortsOtherSegmentsBetweenLettersAndPureDigits() {
+        String out = LocationNumberCompressor.compressJoined(List.of(
+                "W1", "X-自定义", "A1"
+        ));
+        assertEquals("A1，W1，X-自定义", out);
+    }
+
+    @Test
+    void doesNotCollapseBareLetterDigitToken() {
+        assertEquals("Q3", LocationNumberCompressor.compressJoined(List.of("Q3")));
     }
 
     @Test

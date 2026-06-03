@@ -2849,11 +2849,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         String conclusion = null;
         Double minRequired = UltrasonicThicknessMinRequiredRules.parseMinRequiredFromDetectionContent(
                 report.getDetectionContent(), objectMapper, contentRowIndex);
-        UltrasonicThicknessMinRequiredRules.EvaluationResult eval =
-                UltrasonicThicknessMinRequiredRules.evaluateRows(measurementRows, minRequired);
-        if (eval.hasEvaluableRow()) {
-            conclusion = UltrasonicThicknessMinRequiredRules.buildConclusionSentence(eval.failedPointNumbers());
-        }
+        conclusion = UltrasonicThicknessMinRequiredRules.resolveConclusionSentence(measurementRows, minRequired);
         if (conclusion == null) {
             conclusion = getDetectionConclusion(report);
             if (conclusion.equals("/")) {
@@ -16380,7 +16376,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         setupTableProperties(conclusionTable, PT_TABLE_WIDTH);
         
         XWPFTableRow conclusionRow = conclusionTable.getRow(0);
-        setRowHeight(conclusionRow, 2933);
+        setRowHeight(conclusionRow, 2733);
         String conclusionText = getConclusionTextForReport(report);
         createTableCell(conclusionRow.getCell(0), conclusionText != null ? conclusionText : "", 9028, ParagraphAlignment.BOTH, XWPFTableCell.XWPFVertAlign.TOP, 4);
         

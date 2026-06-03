@@ -4,9 +4,10 @@
  * - 纯数字 1～20（含 9→10 变宽）→ 1~20；乱序如 1,2,3,5,6,7,4 → 1~7
  * - W1-R1-1,W1-R1-2,W1-R1-3 → W1-R1-1~3
  * - W1-R1-1~3，W1-R2-1~3（尾段完全一致）→ W1-R1~2
- * - H5前-1,H5-2,H5后-3 → H5（去掉汉字后扁平基准 + 前缀以 - 结尾）
- * - 最终列表中 H5,H6,H7（扁平、无 -/~/_）→ H5~7
+ * - H5前-1,H10-前1,H5-2,H5后-3 → H5（扁平基准折叠）
+ * - 最终列表中 H5,H6,H7（扁平、无 -/~/_）→ H5~H7
  * - 1 与 01（纯数字）不因数值相等合并；同宽度时可 01~02
+ * - 合并后按前缀分组排序：字母组 A→Z，其它组 A→Z，纯数字组最后
  */
 
 function normalizeToken(s: string): string {
@@ -81,12 +82,45 @@ function endsWithSepBeforeDigitSuffix(prefix: string): boolean {
   return cp === 0x2d || cp === 0x5f;
 }
 
+function qualifiesForCanonicalCollapse(prefix: string): boolean {
+  if (!prefix) return false;
+  if (endsWithSepBeforeDigitSuffix(prefix)) return true;
+  if (/\p{Script=Han}/u.test(prefix)) return true;
+  const stripped = stripAllHan(prefix);
+  for (let i = 0; i < stripped.length; ) {
+    const cp = stripped.codePointAt(i)!;
+    if (cp === 0x2d || cp === 0x5f) return true;
+    i += cp > 0xffff ? 2 : 1;
+  }
+  return false;
+}
+
 function safeParseLong(tail: string): number {
   const n = parseInt(tail, 10);
   return Number.isNaN(n) ? Number.MIN_SAFE_INTEGER : n;
 }
 
 type OrdSeg = { text: string; order: number };
+
+const PURE_DIGIT_SEGMENT = /^[0-9]+(~[0-9]+)?$/;
+const LEADING_LETTERS = /^([A-Za-z]+)/;
+
+/** 组间键：0 字母前缀、1 其它、2 纯数字 */
+function sortGroupKey(text: string): string {
+  if (text == null || text === '') return '1\u0000';
+  if (PURE_DIGIT_SEGMENT.test(text)) return '2\u0000NUM';
+  const m = text.match(LEADING_LETTERS);
+  if (m) return `0\u0000${m[1].toUpperCase()}`;
+  return `1\u0000${text.toUpperCase()}`;
+}
+
+function sortOutputSegments(segments: OrdSeg[]): OrdSeg[] {
+  if (segments.length < 2) return segments.slice();
+  return segments.slice().sort((a, b) => {
+    const gk = sortGroupKey(a.text).localeCompare(sortGroupKey(b.text));
+    return gk !== 0 ? gk : a.order - b.order;
+  });
+}
 
 function formatRangeSegment(prefix: string, startTail: string, endTail: string): string {
   if (startTail === endTail) {
@@ -198,7 +232,7 @@ function containsFlatMergeBreaker(t: string): boolean {
 type TailEntry = { num: number; tail: string; order: number; originalText: string };
 
 /**
- * 末段合并：H5,H6,H7 → H5~7；含 ~、-、_ 的段（如 W1-R1~2）保持原样。
+ * 末段合并：H5,H6,H7 → H5~H7；含 ~、-、_ 的段（如 W1-R1~2）保持原样。
  */
 function mergeFlatPrefixedNumberRuns(segments: OrdSeg[]): OrdSeg[] {
   if (segments.length < 2) {
@@ -257,7 +291,11 @@ function mergeFlatPrefixedNumberRuns(segments: OrdSeg[]): OrdSeg[] {
         for (let k = runStart; k <= runEnd; k++) {
           minOrd = Math.min(minOrd, uniq[k].order);
         }
-        mergedOut.push({ text: formatRangeSegment(pfx, a.tail, b.tail), order: minOrd });
+        const rangeText =
+          a.originalText === b.originalText
+            ? a.originalText
+            : `${a.originalText}~${b.originalText}`;
+        mergedOut.push({ text: rangeText, order: minOrd });
       } else {
         const one = uniq[runStart];
         mergedOut.push({ text: one.originalText, order: one.order });
@@ -304,7 +342,7 @@ export function compressLocationNumbers(tokens: string[]): string {
       if (
         canonical.length > 0 &&
         isFlatCanonicalBase(canonical) &&
-        endsWithSepBeforeDigitSuffix(prefix)
+        qualifiesForCanonicalCollapse(prefix)
       ) {
         if (!canonicalFirstIdx.has(canonical)) {
           canonicalFirstIdx.set(canonical, rowIdx);
@@ -410,7 +448,7 @@ export function compressLocationNumbers(tokens: string[]): string {
     all.push({ text: r, order: rawFirstIdx.get(r) ?? 1e9 });
   }
   all.sort((a, b) => a.order - b.order);
-  const flatMerged = mergeFlatPrefixedNumberRuns(all);
+  const flatMerged = sortOutputSegments(mergeFlatPrefixedNumberRuns(all));
 
   return flatMerged.map((o) => o.text).join('，');
 }

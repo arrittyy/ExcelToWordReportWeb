@@ -18,22 +18,26 @@ import java.util.regex.Pattern;
  * {@code 1-焊-1,1-焊-2,1-母-1,1-母-2}（行序可乱）→ {@code 1-焊-1~2，1-母-1~2}（按各行中前缀首次出现顺序输出）。
  * <p>
  * 「基准位号」折叠：凡匹配 {@code 前缀-末段数字} 且去掉汉字后的前缀为<strong>扁平</strong>（不含 {@code -}/{@code _}）时，
- * 只输出该基准（如 {@code H5前-1}、{@code H5-2} → {@code H5}），不再展示尾段区间；{@code W1-R1-1} 等复合前缀仍走原有压缩。
+ * 只输出该基准（如 {@code H5前-1}、{@code H10-前1}、{@code H5-2} → {@code H5}），不再展示尾段区间；{@code W1-R1-1} 等复合前缀仍走原有压缩。
  * <p>
- * 末段再合并：最终片段列表中扁平「前缀+数字」（段内无 {@code ~}/{@code -}/{@code _}）按相同前缀、数值连续收成区间，
- * 例如 {@code H5，H6，H7} → {@code H5~7}。
+ * 末段再合并：最终片段列表中扁平「前缀+数字」（段内无 {@code ~}/{@code -}/{@code _}）按相同字母前缀、数值连续收成区间，
+ * 例如 {@code H5，H6，H7} → {@code H5~H7}。
  * <p>
  * 二次压缩（字母无关）：凡能匹配 {@code base + 数字(mid) + 单非数字(sep) + 尾段(数字~数字)} 的段（如 {@code W1-R1-1~3}、{@code 19R1-W5-1~3}、{@code PROJ-Q4-1~3}），
  * 在相同 {@code base} 与相同尾段下将连续 {@code mid} 压成短式（如 {@code W1-R1~2}、{@code 19R1-W5~15}）；{@code mid} 在断点处拆成多段极大连续子序列后分别合并。
  * <p>
  * 比较与合并前对每条编号做 {@link #normalizeToken(String)}：NFKC、去空白、拉丁字母 {@link Locale#ROOT} 大写，
  * 使全角半角、大小写、空格差异视为同一编号。
+ * <p>
+ * 最终输出在合并后按前缀分组排序：拉丁字母开头组名 A→Z，其它非纯数字组名 A→Z，纯数字组固定最后；组内保持行序。
  */
 public final class LocationNumberCompressor {
 
     private static final Pattern TRAILING_INT = Pattern.compile("^(.*?)(\\d+)$");
     private static final Pattern SECOND_PASS_PATTERN = Pattern.compile("^(.*?)(\\d+)([^\\d])(\\d+~\\d+)$");
     private static final Pattern IS_HAN = Pattern.compile("\\p{IsHan}");
+    private static final Pattern PURE_DIGIT_SEGMENT = Pattern.compile("^[0-9]+(~[0-9]+)?$");
+    private static final Pattern LEADING_LETTERS = Pattern.compile("^([A-Za-z]+)");
     /** 一格内可能用中英文逗号/分号/空白写了多个编号，须先拆成独立 token 再压缩 */
     private static final Pattern TOKEN_SPLIT = Pattern.compile("[，,\\s;]+");
 
@@ -88,7 +92,7 @@ public final class LocationNumberCompressor {
             String canonical = trimCanonicalSeparators(stripAllHan(prefix));
             if (!canonical.isEmpty()
                     && isFlatCanonicalBase(canonical)
-                    && endsWithSepBeforeDigitSuffix(prefix)) {
+                    && qualifiesForCanonicalCollapse(prefix)) {
                 canonicalFirstIdx.putIfAbsent(canonical, rowIdx);
                 rowIdx++;
                 continue;
@@ -171,6 +175,7 @@ public final class LocationNumberCompressor {
         }
         all.sort(Comparator.comparingInt((OrdSeg o) -> o.order));
         all = mergeFlatPrefixedNumberRuns(all);
+        all = sortOutputSegments(all);
 
         List<String> joined = new ArrayList<>(all.size());
         for (OrdSeg o : all) {
@@ -181,7 +186,7 @@ public final class LocationNumberCompressor {
 
     /**
      * 末段合并：输出列表中扁平「前缀+数字」段（无 {@code ~}/{@code -}/{@code _}）按相同前缀、数值连续收成区间，
-     * 例如 {@code H5，H6，H7} → {@code H5~7}；{@code W1-R1~2} 等不参与。
+     * 例如 {@code H5，H6，H7} → {@code H5~H7}；{@code W1-R1~2} 等不参与。
      */
     private static List<OrdSeg> mergeFlatPrefixedNumberRuns(List<OrdSeg> segments) {
         if (segments == null || segments.isEmpty()) {
@@ -248,7 +253,10 @@ public final class LocationNumberCompressor {
                     for (int k = runStart; k <= runEnd; k++) {
                         minOrd = Math.min(minOrd, uniq.get(k).order);
                     }
-                    mergedOut.add(new OrdSeg(formatRangeSegment(pfx, a.tail, b.tail), minOrd));
+                    String rangeText = a.originalText.equals(b.originalText)
+                            ? a.originalText
+                            : a.originalText + "~" + b.originalText;
+                    mergedOut.add(new OrdSeg(rangeText, minOrd));
                 } else {
                     TailEntry one = uniq.get(runStart);
                     mergedOut.add(new OrdSeg(one.originalText, one.order));
@@ -261,6 +269,35 @@ public final class LocationNumberCompressor {
         combined.addAll(mergedOut);
         combined.sort(Comparator.comparingInt(o -> o.order));
         return combined;
+    }
+
+    /**
+     * 合并完成后按前缀分组排序：字母组 A→Z，OTHER 组 A→Z，纯数字组最后；组内按 {@code order}。
+     */
+    private static List<OrdSeg> sortOutputSegments(List<OrdSeg> segments) {
+        if (segments == null || segments.size() < 2) {
+            return segments == null ? new ArrayList<>() : new ArrayList<>(segments);
+        }
+        List<OrdSeg> sorted = new ArrayList<>(segments);
+        sorted.sort(Comparator
+                .comparing((OrdSeg o) -> sortGroupKey(o.text))
+                .thenComparingInt(o -> o.order));
+        return sorted;
+    }
+
+    /** 组间键：{@code 0} 字母前缀、{@code 1} 其它、{@code 2} 纯数字。 */
+    private static String sortGroupKey(String text) {
+        if (text == null || text.isEmpty()) {
+            return "1\u0000";
+        }
+        if (PURE_DIGIT_SEGMENT.matcher(text).matches()) {
+            return "2\u0000NUM";
+        }
+        Matcher m = LEADING_LETTERS.matcher(text);
+        if (m.find()) {
+            return "0\u0000" + m.group(1).toUpperCase(Locale.ROOT);
+        }
+        return "1\u0000" + text.toUpperCase(Locale.ROOT);
     }
 
     private static boolean containsFlatMergeBreaker(String t) {
@@ -461,6 +498,30 @@ public final class LocationNumberCompressor {
         }
         int cp = prefix.codePointBefore(prefix.length());
         return cp == '-' || cp == '_';
+    }
+
+    /**
+     * 扁平基准折叠：{@code H10-1}、{@code H10前-1}、{@code H10-前1} 等；{@code Q3}、{@code W1-R1-1} 不折叠。
+     */
+    private static boolean qualifiesForCanonicalCollapse(String prefix) {
+        if (prefix == null || prefix.isEmpty()) {
+            return false;
+        }
+        if (endsWithSepBeforeDigitSuffix(prefix)) {
+            return true;
+        }
+        if (IS_HAN.matcher(prefix).find()) {
+            return true;
+        }
+        String stripped = stripAllHan(prefix);
+        for (int i = 0; i < stripped.length(); ) {
+            int cp = stripped.codePointAt(i);
+            if (cp == '-' || cp == '_') {
+                return true;
+            }
+            i += Character.charCount(cp);
+        }
+        return false;
     }
 
     private static long safeParseLong(String s) {

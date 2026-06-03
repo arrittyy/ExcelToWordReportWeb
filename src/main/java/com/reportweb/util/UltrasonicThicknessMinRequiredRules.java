@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 /**
  * 超声波测厚（UTM/UTT）：检测内容各行「最小需要厚度」与同下标 perContentRow 测点实测厚度比较。
+ * 未填或 ≤0 的最小需要厚度不参与壁厚判定，Word 自动结论视为合格（{@link #CONCLUSION_OK}）。
  */
 public final class UltrasonicThicknessMinRequiredRules {
 
@@ -20,7 +21,8 @@ public final class UltrasonicThicknessMinRequiredRules {
 
     private static final Pattern FIRST_INTEGER = Pattern.compile("(\\d+)");
 
-    private static final String CONCLUSION_OK =
+    /** 合格自动结论（与全部测点满足最小需要厚度时一致） */
+    public static final String CONCLUSION_OK =
             "在上述检测条件下，未见异常。";
     private static final String CONCLUSION_FAIL_PREFIX =
             "在上述检测条件下，";
@@ -175,6 +177,17 @@ public final class UltrasonicThicknessMinRequiredRules {
             }
         }
         return new EvaluationResult(failed, hasEvaluable);
+    }
+
+    /**
+     * Word/预览用自动检测结论：未填最小需要厚度时视为合格；已填则按实测与最小厚度比较。
+     */
+    public static String resolveConclusionSentence(Iterable<JsonNode> rows, Double minRequired) {
+        if (minRequired == null || minRequired <= 0) {
+            return buildConclusionSentence(List.of());
+        }
+        EvaluationResult eval = evaluateRows(rows, minRequired);
+        return buildConclusionSentence(eval.failedPointNumbers());
     }
 
     public static String buildConclusionSentence(List<String> failedPointNumbers) {
