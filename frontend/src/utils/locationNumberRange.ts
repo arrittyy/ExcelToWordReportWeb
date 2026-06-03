@@ -264,7 +264,7 @@ function mergeFlatPrefixedNumberRuns(segments: OrdSeg[]): OrdSeg[] {
     byPrefix.set(pfx, arr);
   }
   const mergedOut: OrdSeg[] = [];
-  for (const [pfx, group] of byPrefix) {
+  for (const group of byPrefix.values()) {
     group.sort((a, b) => (a.num !== b.num ? a.num - b.num : a.order - b.order));
     const uniq: TailEntry[] = [];
     for (const e of group) {
