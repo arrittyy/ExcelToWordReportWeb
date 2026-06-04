@@ -203,7 +203,7 @@ public class DetectionContentNarrativeService {
         if (type == null || !hasValue(type)) {
             return "";
         }
-        String stripped = TypeLabelUtil.stripParentheticalQualifiers(type);
+        String stripped = TypeLabelUtil.effectiveTypeForNarrative(type);
         if (!hasValue(stripped)) {
             return "";
         }

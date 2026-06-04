@@ -140,6 +140,19 @@ class DetectionContentNarrativeServiceTest {
     }
 
     @Test
+    void paut_typeWithDashSubtype_stripsSuffixForConcat() {
+        ExperimentType paut = new ExperimentType();
+        paut.setCode("PAUT");
+        paut.setName("相控阵超声波检测");
+        String out = service.buildDetectionDetailText(
+                "相控阵超声波检测", "高压转子", "叶根-叉形",
+                "2", "焊缝区域", "P1", true, true, paut, null, null);
+        assertTrue(out.contains("叶根"));
+        assertFalse(out.contains("叉形"));
+        assertTrue(out.contains("相控阵超声波检测高压转子叶根"));
+    }
+
+    @Test
     void buildDetectionContentNarrativeSingleRow_usesPerRowOverrideOnly() {
         ExperimentType ut = new ExperimentType();
         ut.setCode("UT");

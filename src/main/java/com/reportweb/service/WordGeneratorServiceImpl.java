@@ -1406,7 +1406,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             return false;
         }
         String t = type.trim();
-        return "叶片".equals(t) || "叶根".equals(t) || "叶根（叉形、菌形）".equals(t) || "叶根（T形、枞树形）".equals(t);
+        return "叶片".equals(t) || "叶根".equals(t) || "叶根（叉形、菌形）".equals(t) || "叶根（T形、枞树形）".equals(t)
+            || TypeLabelUtil.isPautRootDashSubtypeType(t);
     }
 
     private String buildUtPautStyleDetectionContentCell(Report report, ExperimentType expType, boolean useInspectionContentLabel) {
@@ -2799,6 +2800,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             case "叶根（叉形、菌形）":
             case "叶根（T形、枞树形）":
             case "叶根":
+            case "叶根-叉形":
+            case "叶根-菌形":
+            case "叶根-T形":
+            case "叶根-枞树形":
             case "角焊缝（联箱）":
             case "角焊缝（插管）":
                 return wordConclusionUtDefault(report);
@@ -5849,6 +5854,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             case "叶根（叉形、菌形）":
             case "叶根（T形、枞树形）":
             case "叶根":
+            case "叶根-叉形":
+            case "叶根-菌形":
+            case "叶根-T形":
+            case "叶根-枞树形":
                 generatePautBolt(report, project, document, type);
                 return;
             case "角焊缝（联箱）":
@@ -6159,7 +6168,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         XWPFTableRow row4 = mainTable.createRow();
         setRowHeight(row4, 554);
         createTableCell(row4.getCell(0), "部件规格", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String boltSpec = mergedSpecMOrReportField(report, comps);
+        String boltSpec = TypeLabelUtil.pautRootShapeFromType(type)
+            .orElseGet(() -> mergedSpecMOrReportField(report, comps));
         createTableCell(row4.getCell(1), boltSpec, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row4.getCell(2), "部件材质", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         String boltMaterial = mergedMaterialOrCustomField(report, comps);
@@ -6277,22 +6287,27 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         XWPFTableRow row1 = table.getRow(0);
         setRowHeight(row1, 554);
         createTableCell(row1.getCell(0), "探头参数", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        switch (type) {
-            case "叶片":
-                createTableCell(row1.getCell(1), "1号探头（5MHz阵元数32晶片1×10mm)", 3590, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(row1.getCell(2), "1号探头（    /    )", 3591, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                break;
-            case "叶根（叉形、菌形）":
-                createTableCell(row1.getCell(1), "1号探头（7.5MHz阵元数16晶片0.5×10mm)", 3590, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(row1.getCell(2), "1号探头（    /    )", 3591, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                break;
-            case "叶根（T形、枞树形）":
-                createTableCell(row1.getCell(1), "1号探头（5MHz阵元数10晶片0.5×0.5mm)", 3590, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(row1.getCell(2), "1号探头（    /    )", 3591, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                break;
-        
-            default:
-                break;
+        String probe1 = TypeLabelUtil.pautRootShapeFromType(type)
+            .flatMap(TypeLabelUtil::pautBoltProbeParamForRootShape)
+            .orElse(null);
+        if (probe1 == null) {
+            switch (type) {
+                case "叶片":
+                    probe1 = "1号探头（5MHz阵元数32晶片1×10mm)";
+                    break;
+                case "叶根（叉形、菌形）":
+                    probe1 = "1号探头（7.5MHz阵元数16晶片0.5×10mm)";
+                    break;
+                case "叶根（T形、枞树形）":
+                    probe1 = "1号探头（5MHz阵元数10晶片0.5×0.5mm)";
+                    break;
+                default:
+                    break;
+            }
+        }
+        if (probe1 != null) {
+            createTableCell(row1.getCell(1), probe1, 3590, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(row1.getCell(2), "1号探头（    /    )", 3591, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
         XWPFTableRow row2 = table.createRow();
         setRowHeight(row2, 454);
@@ -20731,8 +20746,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                                       rowData.has("堆积量") ? rowData.get("堆积量") : null;
                     if (accNode != null) accumulation = accNode.isNumber() ? String.valueOf(accNode.asDouble()) : accNode.asText();
                 }
-                createTableCell(dataRow.getCell(group * 2), number, sod6ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(group * 2 + 1), accumulation, sod6ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(group * 2), number, sodAppendix6ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(group * 2 + 1), accumulation, sodAppendix6ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             }
         }
 

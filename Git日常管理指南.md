@@ -75,7 +75,7 @@ git diff frontend/src/pages/Projects/ProjectDetailPage.tsx
 ```powershell
 git add .
 git status
-git commit -m "fix: 简要说明本次改动"
+git commit -m "fix: 序号合并修复"
 git push origin dev
 ```
 

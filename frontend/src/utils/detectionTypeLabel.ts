@@ -4,12 +4,19 @@ import { detectionTypeOrderIndex } from '@/utils/aggregateDetectionLogOrder';
  * 检测内容「类型」用于叙述/摘要拼接时去掉括注（与后端 TypeLabelUtil 一致）。
  * 入库与下拉展示仍保留完整选项。
  */
+/** PAUT 叶根细分：叙述拼接仅保留「叶根」（与后端 TypeLabelUtil.stripPautRootDashSubtype 一致） */
+function stripPautRootDashSubtype(label: string): string {
+  const m = label.match(/^叶根[-－].+$/);
+  return m ? '叶根' : label;
+}
+
 export function stripTypeParentheticalForConcat(label: string): string {
   if (!label) return '';
-  return label
+  const stripped = label
     .replace(/（[^）]*）/g, '')
     .replace(/\([^)]*\)/g, '')
     .trim();
+  return stripPautRootDashSubtype(stripped);
 }
 
 /** Ant Tag 预设色，按检测类型顺序循环映射 */
