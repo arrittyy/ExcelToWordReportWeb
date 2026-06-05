@@ -1,0 +1,36 @@
+@import '../Projects/ProjectDetailPage.css';
+
+.material-library-page-header {
+  margin-bottom: 8px;
+}
+
+.material-library-page-desc {
+  color: rgba(0, 0, 0, 0.45);
+  margin-bottom: 4px;
+}
+
+/* 材质库表格：横线 + 竖线网格（边框色可在此调整，如 #bfbfbf 更深） */
+.material-library-table.ant-table-wrapper {
+  --material-library-table-border: #f0f0f0;
+}
+
+.material-library-table.ant-table-wrapper .ant-table-container {
+  border: 1px solid var(--material-library-table-border);
+  border-radius: 8px;
+}
+
+.material-library-table .ant-table-thead > tr > th,
+.material-library-table .ant-table-tbody > tr > td,
+.material-library-table .ant-table-bordered .ant-table-cell {
+  border-color: var(--material-library-table-border) !important;
+}
+
+.material-library-table .ant-table-thead > tr > th,
+.material-library-table .ant-table-tbody > tr > td {
+  border-inline-end: 1px solid var(--material-library-table-border);
+}
+
+.material-library-table .ant-table-thead > tr > th:last-child,
+.material-library-table .ant-table-tbody > tr > td:last-child {
+  border-inline-end: none;
+}

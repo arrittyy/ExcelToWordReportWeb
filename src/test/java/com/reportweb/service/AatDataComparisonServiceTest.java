@@ -26,7 +26,7 @@ class AatDataComparisonServiceTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final DataComparisonService dataComparisonService = new DataComparisonService(objectMapper);
-    private final MaterialPropertyService materialPropertyService = new MaterialPropertyService();
+    private final MaterialPropertyService materialPropertyService = new MaterialPropertyService(null);
     private final ReportComponentMergeHelper mergeHelper = new ReportComponentMergeHelper();
 
     private AatDataComparisonService aatService;

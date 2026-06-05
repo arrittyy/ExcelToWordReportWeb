@@ -9,12 +9,14 @@ import {
   BarChartOutlined,
   ProjectOutlined,
   BankOutlined,
+  DatabaseOutlined,
   KeyOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isAdmin, isSubUser } from '@/utils/auth';
 import type { MenuProps } from 'antd';
+import './MainLayout.css';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -24,6 +26,17 @@ const MainLayout: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(true);
+  const [pinnedExpanded, setPinnedExpanded] = useState(false);
+
+  const handleCollapse = (nextCollapsed: boolean) => {
+    if (nextCollapsed) {
+      setPinnedExpanded(false);
+      setCollapsed(true);
+    } else {
+      setPinnedExpanded(true);
+      setCollapsed(false);
+    }
+  };
 
   // 子账号仅显示「项目管理」；其他用户显示完整菜单
   const menuItems: MenuProps['items'] = isSubUser()
@@ -54,6 +67,11 @@ const MainLayout: React.FC = () => {
           key: '/power-plants',
           icon: <BankOutlined />,
           label: '电厂数据',
+        },
+        {
+          key: '/material-library',
+          icon: <DatabaseOutlined />,
+          label: '材质库',
         },
         ...(isAdmin() ? [{
           key: '/users',
@@ -107,32 +125,28 @@ const MainLayout: React.FC = () => {
       <Sider
         collapsible
         collapsed={collapsed}
-        onCollapse={setCollapsed}
+        onCollapse={handleCollapse}
+        onMouseEnter={() => {
+          if (!pinnedExpanded) setCollapsed(false);
+        }}
+        onMouseLeave={() => {
+          if (!pinnedExpanded) setCollapsed(true);
+        }}
         width={280}
         style={{
           background: 'linear-gradient(180deg, #667eea 0%, #764ba2 100%)',
         }}
       >
-        <div
-          style={{
-            height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0 16px',
-            color: '#fff',
-          }}
-        >
-          {!collapsed && (
-            <Space>
-              <DashboardOutlined style={{ fontSize: 32 }} />
-              <div>
-                <div style={{ fontSize: 20, fontWeight: 'bold' }}>数智报告系统</div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>-by材料技术部-</div>
-              </div>
-            </Space>
-          )}
-          {collapsed && <DashboardOutlined style={{ fontSize: 32, color: '#fff' }} />}
+        <div className={`sider-brand${collapsed ? ' sider-brand--collapsed' : ''}`}>
+          <DashboardOutlined className="sider-brand-icon" />
+          <div className="sider-brand-text">
+            <div className="sider-brand-title">数智报告系统</div>
+            <div className="sider-brand-subtitle">
+              <span className="sider-brand-subtitle-line" aria-hidden />
+              <span className="sider-brand-subtitle-text">-by材料技术部-</span>
+              <span className="sider-brand-subtitle-line" aria-hidden />
+            </div>
+          </div>
         </div>
         
         <Menu

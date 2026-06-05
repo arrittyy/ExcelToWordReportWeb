@@ -1,13 +1,20 @@
 package com.reportweb.service;
 
+import com.reportweb.entity.MaterialLibraryEntry;
+import com.reportweb.repository.MaterialLibraryEntryRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,9 +36,20 @@ public class MaterialPropertyService {
     private static final Pattern HYPHEN_BRINELL_RANGE = Pattern.compile(
             "^\\s*([-+]?\\d+\\.?\\d*)\\s*-\\s*([-+]?\\d+\\.?\\d*)\\s*$");
 
+    private final MaterialLibraryEntryRepository materialLibraryEntryRepository;
+    private final ConcurrentHashMap<String, Map<String, String>> materialCache = new ConcurrentHashMap<>();
+
     // ========== 材质属性数据 ==========
     // key: 材质名称（GB5310牌号或国外牌号），value: 属性映射
     private static final Map<String, Map<String, String>> MATERIAL_PROPERTIES = new HashMap<>();
+
+    @Autowired
+    public MaterialPropertyService(MaterialLibraryEntryRepository materialLibraryEntryRepository) {
+        this.materialLibraryEntryRepository = materialLibraryEntryRepository;
+        if (this.materialLibraryEntryRepository == null) {
+            refreshMaterialCache();
+        }
+    }
     
     // 初始化材质属性数据（在类加载时执行）
     static {
@@ -370,6 +388,11 @@ public class MaterialPropertyService {
         }
         if (steelPipeRange != null && !steelPipeRange.isEmpty()) {
             props.put("里氏-钢管", steelPipeRange);
+            // 母材（里氏）默认与钢管范围一致；若已显式配置母材则不覆盖
+            String existingBase = props.get("里氏");
+            if (existingBase == null || existingBase.trim().isEmpty()) {
+                props.put("里氏", steelPipeRange);
+            }
         }
     }
 
@@ -416,6 +439,7 @@ public class MaterialPropertyService {
         setLeebBoltRange("20Cr12NiMoWV(C422)", "252～302");
         setLeebBoltRange("1Cr11MoNiW1VNbN", "252～302");
         setLeebBoltRange("2Cr11NiMoNbVN", "277～331");
+        setLeebBoltRange("2Cr12NiMo1W1V", "277～331");
         setLeebBoltRange("2Cr11Mo1VNbN", "290～321");
         setLeebBoltRange("2Cr12NiW1Mo1V", "290～321");
         setLeebBoltRange("2Cr11Mo1NiWVNbN", "290～321");
@@ -491,32 +515,81 @@ public class MaterialPropertyService {
         MATERIAL_PROPERTIES.put(key, properties);
     }
     
+    @PostConstruct
+    void loadMaterialCacheOnStartup() {
+        refreshMaterialCache();
+    }
+
+    public void refreshMaterialCache() {
+        materialCache.clear();
+        if (materialLibraryEntryRepository == null) {
+            loadStaticSnapshotIntoCache();
+            return;
+        }
+        for (MaterialLibraryEntry entry : materialLibraryEntryRepository.findAllEffectiveForCache()) {
+            putCacheEntry(entry);
+        }
+        log.info("Loaded {} effective material entries into cache", materialCache.size());
+    }
+
+    private void loadStaticSnapshotIntoCache() {
+        for (Map.Entry<String, Map<String, String>> entry : getStaticMaterialPropertiesSnapshot().entrySet()) {
+            materialCache.put(entry.getKey(), entry.getValue());
+        }
+    }
+
+    public Map<String, Map<String, String>> getStaticMaterialPropertiesSnapshot() {
+        Map<String, Map<String, String>> copy = new HashMap<>();
+        for (Map.Entry<String, Map<String, String>> entry : MATERIAL_PROPERTIES.entrySet()) {
+            copy.put(entry.getKey(), entry.getValue() == null
+                    ? new HashMap<>()
+                    : new HashMap<>(entry.getValue()));
+        }
+        return copy;
+    }
+
+    public String canonicalizeMaterialKey(String materialKey) {
+        return canonicalMaterialKey(materialKey);
+    }
+
     /**
-     * 根据材质名称查询材料属性（不区分大小写）
-     * @param materialName 材质名称（可以是GB5310牌号或国外牌号）
-     * @return 材料属性映射，如果找不到则返回 null
+     * 根据材质名称查询材料属性（不区分大小写），数据来自数据库缓存。
      */
     public Map<String, String> getMaterialProperty(String materialName) {
         if (materialName == null || materialName.trim().isEmpty()) {
             return null;
         }
-        
-        String trimmedName = materialName.trim();
-        
-        // 先尝试精确匹配（性能优化）
-        Map<String, String> result = MATERIAL_PROPERTIES.get(trimmedName);
+        return lookupCachedMaterial(materialName.trim());
+    }
+
+    private Map<String, String> lookupCachedMaterial(String trimmedName) {
+        Map<String, String> result = materialCache.get(trimmedName);
         if (result != null) {
             return result;
         }
-        
-        // 如果精确匹配失败，进行不区分大小写的匹配
-        for (Map.Entry<String, Map<String, String>> entry : MATERIAL_PROPERTIES.entrySet()) {
+        for (Map.Entry<String, Map<String, String>> entry : materialCache.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(trimmedName)) {
                 return entry.getValue();
             }
         }
-        
         return null;
+    }
+
+    private void putCacheEntry(MaterialLibraryEntry entry) {
+        if (entry == null || entry.getMaterialKey() == null) {
+            return;
+        }
+        Map<String, String> props;
+        if ("PENDING".equals(entry.getStatus())
+                && entry.getApprovedSnapshot() != null
+                && !entry.getApprovedSnapshot().isEmpty()) {
+            props = new HashMap<>(entry.getApprovedSnapshot());
+        } else {
+            props = entry.getProperties() == null
+                    ? Collections.emptyMap()
+                    : new HashMap<>(entry.getProperties());
+        }
+        materialCache.put(entry.getMaterialKey().trim(), props);
     }
 
     /**

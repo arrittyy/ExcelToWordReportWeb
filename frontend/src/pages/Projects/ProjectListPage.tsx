@@ -176,10 +176,11 @@ const ProjectListPage: React.FC = () => {
 
   const columns: ColumnsType<ProjectList> = [
     {
-      title: '项目编号',
-      dataIndex: 'projectNumber',
-      key: 'projectNumber',
-      width: 150,
+      title: '客户方',
+      width: 270,
+      dataIndex: 'customer',
+      key: 'customer',
+      ellipsis: true,
       filteredValue: [searchText],
       onFilter: (value: any, record: ProjectList) => {
         const search = value.toString().toLowerCase();
@@ -190,17 +191,13 @@ const ProjectListPage: React.FC = () => {
           (record.responsiblePerson || '').toLowerCase().includes(search)
         );
       },
+      render: (text: string | undefined) => (text && text.trim() !== '' ? text : '—'),
     },
     {
       title: '项目名称',
+  
       dataIndex: 'projectName',
       key: 'projectName',
-      ellipsis: true,
-    },
-    {
-      title: '客户方',
-      dataIndex: 'customer',
-      key: 'customer',
       ellipsis: true,
     },
     {
@@ -210,6 +207,12 @@ const ProjectListPage: React.FC = () => {
       width: 120,
       ellipsis: true,
       render: (text: string | undefined) => (text && text.trim() !== '' ? text : '—'),
+    },
+    {
+      title: '项目编号',
+      dataIndex: 'projectNumber',
+      key: 'projectNumber',
+      width: 180,
     },
     {
       title: '开始日期',

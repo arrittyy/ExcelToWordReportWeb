@@ -18,6 +18,7 @@ import PowerPlantFormPage from './pages/PowerPlants/PowerPlantFormPage';
 import PowerPlantDetailPage from './pages/PowerPlants/PowerPlantDetailPage';
 import UserManagementPage from './pages/Users/UserManagementPage';
 import ChangePasswordPage from './pages/Profile/ChangePasswordPage';
+import MaterialLibraryPage from './pages/MaterialLibrary/MaterialLibraryPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -78,6 +79,7 @@ const App: React.FC = () => {
                   <Route path="power-plants/:id" element={<PowerPlantDetailPage />} />
                   <Route path="power-plants/:id/edit" element={<PowerPlantFormPage />} />
                   <Route path="statistics" element={<StatisticsPage />} />
+                  <Route path="material-library" element={<MaterialLibraryPage />} />
                   <Route path="help" element={<HelpPage />} />
                   <Route path="change-password" element={<ChangePasswordPage />} />
                   <Route

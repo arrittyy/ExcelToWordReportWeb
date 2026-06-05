@@ -517,7 +517,7 @@ public class DataComparisonService {
             return true;
         }
         
-        String trimmed = standardValue.trim();
+        String trimmed = MaterialStandardValueNormalizer.normalize(standardValue.trim());
         
         // 1. 处理范围格式：410～550、410-550
         if (trimmed.contains("～") || trimmed.contains("-")) {

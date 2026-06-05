@@ -20,6 +20,7 @@ import {
 import { getComponentDisplaySpec } from '@/utils/projectComponentDisplaySpec';
 import { COMPONENT_CATEGORY_ORDER, sortProjectComponents } from '@/utils/sortProjectComponents';
 import { MATERIAL_KEYS_FROM_LIBRARY } from '@/constants/materialKeysFromLibrary';
+import { materialLibraryService } from '@/services/materialLibraryService';
 import type { ReportList } from '@/types';
 import { buildDetectionTypesByComponentId } from '@/utils/componentDetectionTypes';
 import { abbreviateDetectionTypeName, detectionTypeTagColor } from '@/utils/detectionTypeLabel';
@@ -112,12 +113,25 @@ const ProjectComponentsTable: React.FC<ProjectComponentsTableProps> = ({
 
   const unitComponents = availableComponents?.unitComponents || [];
 
-  // 生成材质选项列表（用于 AutoComplete 的建议）：原有常见材质 + 材质库全部键，去重后排序
+  const { data: materialKeysFromApi } = useQuery({
+    queryKey: ['materialKeys'],
+    queryFn: materialLibraryService.listKeys,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // 生成材质选项列表（用于 AutoComplete 的建议）：常见材质 + 静态库 + API 动态键，去重后排序
   const materialOptions = useMemo(() => {
-    const merged = [...new Set([...COMMON_MATERIALS, ...MATERIAL_KEYS_FROM_LIBRARY])];
+    const merged = [
+      ...new Set([
+        ...COMMON_MATERIALS,
+        ...MATERIAL_KEYS_FROM_LIBRARY,
+        ...(materialKeysFromApi ?? []),
+      ]),
+    ];
     merged.sort((a, b) => a.localeCompare(b, 'zh-CN'));
     return merged.map(m => ({ value: m }));
-  }, []);
+  }, [materialKeysFromApi]);
 
   const categoryOptions = useMemo(() => {
     const standardSet = new Set<string>(COMPONENT_CATEGORY_ORDER);

@@ -217,26 +217,21 @@ public class ProjectsController {
         if (isAdmin) {
             return projectRepository.findAllOrderByCreatedAtDesc();
         }
-        List<Project> own = isSubUser
+        return isSubUser
                 ? projectRepository.findByUserIdAndStatusOrderByCreatedAtDesc(effectiveUserId, PROJECT_STATUS_IN_PROGRESS)
                 : projectRepository.findByUserIdOrderByCreatedAtDesc(userId);
-        Map<Integer, Project> merged = new HashMap<>();
-        for (Project p : own) {
-            merged.put(p.getId(), p);
+    }
+
+    private List<Project> listInProgressProjectsForTodos(boolean isAdmin, String... principalNames) {
+        List<Project> inProgress = projectRepository.findByStatusOrderByCreatedAtDesc(PROJECT_STATUS_IN_PROGRESS);
+        if (isAdmin) {
+            return inProgress;
         }
-        if (principalNames != null && principalNames.length > 0) {
-            List<Project> all = projectRepository.findAllOrderByCreatedAtDesc();
-            for (Project p : all) {
-                if (!PROJECT_STATUS_IN_PROGRESS.equals(p.getStatus())) {
-                    continue;
-                }
-                if (isAssignedApprovalRole(p, principalNames)) {
-                    merged.putIfAbsent(p.getId(), p);
-                }
-            }
+        if (principalNames == null || principalNames.length == 0) {
+            return List.of();
         }
-        return merged.values().stream()
-                .sorted(Comparator.comparing(Project::getCreatedAt).reversed())
+        return inProgress.stream()
+                .filter(p -> isAssignedApprovalRole(p, principalNames))
                 .collect(Collectors.toList());
     }
     @GetMapping("/my-todos")
@@ -249,18 +244,12 @@ public class ProjectsController {
             if (principalNames.length == 0) {
                 return ResponseEntity.ok(new ArrayList<>());
             }
-            String userId = currentUser.getId();
             boolean isAdmin = UserRoleUtils.isAdmin(currentUser);
-            boolean isSubUser = UserRoleUtils.isSubUser(currentUser);
-            String effectiveUserId = isSubUser && currentUser.getParentUserId() != null
-                    ? currentUser.getParentUserId() : userId;
 
-            List<Project> projects = listVisibleProjectsForUser(
-                    isAdmin, isSubUser, userId, effectiveUserId, principalNames);
+            List<Project> projects = listInProgressProjectsForTodos(isAdmin, principalNames);
 
             List<ProjectDTOs.TodoItem> todos = new ArrayList<>();
             for (Project p : projects) {
-                if (!PROJECT_STATUS_IN_PROGRESS.equals(p.getStatus())) continue;
                 int ndt = p.getApprovalStepNdt() != null ? p.getApprovalStepNdt() : 0;
                 int chem = p.getApprovalStepChem() != null ? p.getApprovalStepChem() : 0;
                 // NDT: 步骤0且我是编写人；步骤1且我是审核人；步骤2且我是批准人
@@ -308,6 +297,7 @@ public class ProjectsController {
         item.setProjectId(p.getId());
         item.setProjectNumber(p.getProjectNumber());
         item.setProjectName(p.getProjectName());
+        item.setCustomer(p.getCustomer());
         item.setTrack(track);
         item.setRole(role);
         item.setStep(step);

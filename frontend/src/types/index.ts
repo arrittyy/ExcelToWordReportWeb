@@ -121,6 +121,7 @@ export interface TodoItem {
   projectId: number;
   projectNumber: string;
   projectName: string;
+  customer?: string;
   track: 'ndt' | 'chem';
   role: 'writer' | 'reviewer' | 'approver';
   step: number;

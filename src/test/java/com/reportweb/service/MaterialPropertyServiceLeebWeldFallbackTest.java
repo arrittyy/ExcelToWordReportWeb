@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MaterialPropertyServiceLeebWeldFallbackTest {
 
-    private final MaterialPropertyService service = new MaterialPropertyService();
+    private final MaterialPropertyService service = new MaterialPropertyService(null);
 
     @Test
     void parseBrinell_rangeWithWaveDash() {
@@ -74,11 +74,13 @@ class MaterialPropertyServiceLeebWeldFallbackTest {
     }
 
     @Test
-    void wb36_fromStaticLibrary_derivesWeldFromSteelLeeb() {
+    void wb36_fromStaticLibrary_usesMotherLeebCopiedFromSteelPipe() {
         Map<String, String> p = service.getMaterialProperty("WB36");
         assertNotNull(p);
-        assertTrue(service.resolveBrinellDerivedLeebWeldRange(p).isPresent());
-        assertEquals("171～270", service.resolveLeebWeldRangeForComparison(p));
+        assertEquals("190～255", p.get("里氏-钢管"));
+        assertEquals("190～255", p.get("里氏"));
+        assertTrue(service.resolveBrinellDerivedLeebWeldRange(p).isEmpty());
+        assertEquals("190～255", service.resolveLeebWeldRangeForComparison(p));
     }
 
     @Test

@@ -14897,7 +14897,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row4.getCell(0), "仪器编号", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row4.getCell(1), getInstrumentNumber(report, "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row4.getCell(2), "检测标准", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        createTableCell(row4.getCell(3), evaluationStandard, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+        createTableCell(row4.getCell(3), "DLT 991-2022", 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // 第五行: 检测人员 | 检测日期
         XWPFTableRow row5 = mainTable.createRow();

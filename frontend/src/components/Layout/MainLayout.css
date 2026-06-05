@@ -1,0 +1,72 @@
+.sider-brand {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  padding: 0 16px;
+  gap: 12px;
+  color: #fff;
+  overflow: hidden;
+}
+
+.sider-brand-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.sider-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 0.3s ease, opacity 0.25s ease;
+}
+
+.sider-brand:not(.sider-brand--collapsed) .sider-brand-text {
+  max-width: 200px;
+  opacity: 1;
+}
+
+.sider-brand-title {
+  font-size: 20px;
+  font-weight: bold;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.sider-brand-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sider-brand-subtitle-line {
+  display: block;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.55);
+  width: 0;
+  flex-shrink: 0;
+  transition: width 0.35s ease 0.08s;
+}
+
+.sider-brand:not(.sider-brand--collapsed) .sider-brand-subtitle-line {
+  width: 16px;
+}
+
+.sider-brand-subtitle-text {
+  font-size: 12px;
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.3s ease 0.15s, max-width 0.35s ease 0.12s;
+}
+
+.sider-brand:not(.sider-brand--collapsed) .sider-brand-subtitle-text {
+  opacity: 0.8;
+  max-width: 160px;
+}

@@ -16,6 +16,8 @@ public interface ProjectRepository extends JpaRepository<Project, Integer> {
 
     List<Project> findByUserIdAndStatusOrderByCreatedAtDesc(String userId, String status);
 
+    List<Project> findByStatusOrderByCreatedAtDesc(String status);
+
     Optional<Project> findByIdAndUserId(Integer id, String userId);
     
     boolean existsByProjectNumber(String projectNumber);

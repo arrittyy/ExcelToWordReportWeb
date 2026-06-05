@@ -323,6 +323,7 @@ public class ProjectDTOs {
         private Integer projectId;
         private String projectNumber;
         private String projectName;
+        private String customer;
         /** 轨道：ndt / chem */
         private String track;
         /** 角色：writer / reviewer / approver */

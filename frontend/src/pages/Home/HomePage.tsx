@@ -2,8 +2,10 @@ import React from 'react';
 import { Row, Col, Card, List, Typography, Tag, Button, Space, Empty, Badge, Divider } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ProjectOutlined, FileTextOutlined, RightOutlined } from '@ant-design/icons';
+import { ProjectOutlined, FileTextOutlined, RightOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { projectService } from '@/services/projectService';
+import { materialLibraryService } from '@/services/materialLibraryService';
+import { isSubUser } from '@/utils/auth';
 import type { ProjectList, TodoItem } from '@/types';
 
 const { Title, Text } = Typography;
@@ -23,6 +25,17 @@ const HomePage: React.FC = () => {
     queryKey: ['my-todos'],
     queryFn: projectService.getMyTodos,
   });
+
+  const subUser = isSubUser();
+  const { data: materialCapabilities } = useQuery({
+    queryKey: ['materialLibraryCapabilities'],
+    queryFn: materialLibraryService.capabilities,
+    enabled: !subUser,
+  });
+
+  const canReview = materialCapabilities?.canReview ?? false;
+  const pendingReviewCount = materialCapabilities?.pendingReviewCount ?? 0;
+  const rejectedCount = materialCapabilities?.rejectedCount ?? 0;
 
   const myOngoingProjects = projects.filter((p) => p.status === 'InProgress');
 
@@ -100,6 +113,7 @@ const HomePage: React.FC = () => {
                       }
                       description={
                         <Text type="secondary">
+                          {item.customer?.trim() ? `${item.customer.trim()} · ` : ''}
                           {item.projectNumber}
                           {item.reportCount != null && ` · ${item.reportCount} 份报告`}
                         </Text>
@@ -170,6 +184,7 @@ const HomePage: React.FC = () => {
                       }
                       description={
                         <Text type="secondary">
+                          {item.customer?.trim() ? `${item.customer.trim()} · ` : ''}
                           {item.projectNumber} · {trackLabel(item.track)} · {roleLabel(item.role)}
                         </Text>
                       }
@@ -181,6 +196,66 @@ const HomePage: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      {!subUser && (canReview && pendingReviewCount > 0 || rejectedCount > 0) && (
+        <Row gutter={[24, 24]} style={{ marginTop: 24 }}>
+          {canReview && pendingReviewCount > 0 && (
+            <Col xs={24} lg={rejectedCount > 0 ? 12 : 24}>
+              <Card
+                title={
+                  <Space>
+                    <DatabaseOutlined />
+                    <span>材质库待审核</span>
+                    <Badge count={pendingReviewCount} size="small" />
+                  </Space>
+                }
+                style={{
+                  borderRadius: 20,
+                  boxShadow: '0 2px 8px rgba(0,0,0,.06)',
+                }}
+                headStyle={{ borderBottom: '1px solid #f0f0f0', fontWeight: 600 }}
+                bodyStyle={{ padding: '20px 24px' }}
+              >
+                <Space direction="vertical">
+                  <Text type="secondary">有 {pendingReviewCount} 条材质变更等待审核</Text>
+                  <Button type="primary" onClick={() => navigate('/material-library?tab=pending')}>
+                    前往审核
+                  </Button>
+                </Space>
+              </Card>
+            </Col>
+          )}
+          {rejectedCount > 0 && (
+            <Col xs={24} lg={canReview && pendingReviewCount > 0 ? 12 : 24}>
+              <Card
+                title={
+                  <Space>
+                    <DatabaseOutlined />
+                    <span>材质库驳回提醒</span>
+                    <Badge count={rejectedCount} size="small" />
+                  </Space>
+                }
+                style={{
+                  borderRadius: 20,
+                  boxShadow: '0 2px 8px rgba(0,0,0,.06)',
+                  borderColor: '#ffccc7',
+                }}
+                headStyle={{ borderBottom: '1px solid #f0f0f0', fontWeight: 600 }}
+                bodyStyle={{ padding: '20px 24px' }}
+              >
+                <Space direction="vertical">
+                  <Text type="secondary">
+                    您有 {rejectedCount} 条材质提交被驳回，请查看驳回原因并修改后重新提交
+                  </Text>
+                  <Button danger onClick={() => navigate('/material-library?tab=my-submissions')}>
+                    查看我的提交
+                  </Button>
+                </Space>
+              </Card>
+            </Col>
+          )}
+        </Row>
+      )}
     </div>
   );
 };
