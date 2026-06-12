@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Table, Button, Input, Space, Popconfirm, message } from 'antd';
 import { PlusOutlined, DeleteOutlined, SaveOutlined, EditOutlined, CheckOutlined } from '@ant-design/icons';
 import MultiImageUploadField from '../MultiImageUpload/MultiImageUploadField';
+import MetallographicImageUploadField from '../MetallographicImageUpload/MetallographicImageUploadField';
 import type { ImageAttachment } from '../../types';
 
 interface ImageAttachmentsTableProps {
@@ -9,13 +10,16 @@ interface ImageAttachmentsTableProps {
   onChange?: (value: ImageAttachment[]) => void;
   onSave?: (value: ImageAttachment[]) => void;  // ✅ 保存回调
   disabled?: boolean;
+  /** 实验类型代码；MET 时启用金相标尺裁剪上传 */
+  experimentTypeCode?: string;
 }
 
 const ImageAttachmentsTable: React.FC<ImageAttachmentsTableProps> = ({
   value = [],
   onChange,
   onSave,
-  disabled = false
+  disabled = false,
+  experimentTypeCode,
 }) => {
   const [dataSource, setDataSource] = useState<ImageAttachment[]>(value);
   const [editingRows, setEditingRows] = useState<Set<number>>(new Set());
@@ -24,10 +28,13 @@ const ImageAttachmentsTable: React.FC<ImageAttachmentsTableProps> = ({
     setDataSource(value);
   }, [value]);
 
+  const isMetallographic = experimentTypeCode === 'MET';
+
   const handleAdd = () => {
     const newAttachment: ImageAttachment = {
       imageUrls: [],
-      description: ''
+      description: '',
+      ...(isMetallographic ? { metCroppedFlags: [] } : {}),
     };
     
     const newData = [...dataSource, newAttachment];
@@ -104,14 +111,32 @@ const ImageAttachmentsTable: React.FC<ImageAttachmentsTableProps> = ({
       dataIndex: 'imageUrls',
       key: 'imageUrls',
       width: 200,
-      render: (imageUrls: string[], _record: ImageAttachment, index: number) => (
-        <MultiImageUploadField
-          value={imageUrls}
-          onChange={(urls) => handleUpdate(index, 'imageUrls', urls)}
-          maxCount={3}
-          disabled={disabled || !isEditing(index)}
-        />
-      ),
+      render: (imageUrls: string[], record: ImageAttachment, index: number) =>
+        isMetallographic ? (
+          <MetallographicImageUploadField
+            value={imageUrls}
+            metCroppedFlags={record.metCroppedFlags ?? []}
+            onChange={(urls, flags) => {
+              const newData = [...dataSource];
+              newData[index] = {
+                ...newData[index],
+                imageUrls: urls,
+                metCroppedFlags: flags,
+              };
+              setDataSource(newData);
+              onChange?.(newData);
+            }}
+            maxCount={3}
+            disabled={disabled || !isEditing(index)}
+          />
+        ) : (
+          <MultiImageUploadField
+            value={imageUrls}
+            onChange={(urls) => handleUpdate(index, 'imageUrls', urls)}
+            maxCount={3}
+            disabled={disabled || !isEditing(index)}
+          />
+        ),
     },
     {
       title: '附图描述',

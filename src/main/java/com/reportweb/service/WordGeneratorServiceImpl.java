@@ -95,7 +95,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     private static final double SUMMARY_SECTION_LINE_SPACING = 1.5;
     /** 里氏硬度管件/对接焊缝「检测部位」格内固定说明（概述不输出；类型为管件/对接焊缝时追加） */
     private static final String LEE_HARDNESS_MEASUREMENT_POINT_NOTE =
-            "硬度测点编号方法：水平段上侧为#-1测点、垂直段炉前侧为#-1测点、弯头背弧为#-1测点，顺汽流方向顺时针间隔90°依次为#-1、#-2、#-3、#-4测点；位置描述中「前」、「后」参照蒸汽流向确定（蒸汽先经过的为前侧）。";
+            "硬度测点编号方法：水平段上侧为#-1测点、垂直段炉前侧为#-1测点、弯头背弧为#-1测点，顺汽流方向顺时针间隔90°依次为#-1、#-2、#-3、#-4测点；位置描述中“前”、“后”参照蒸汽流向确定（蒸汽先经过的为前侧）。";
     private static final String LEE_HARDNESS_MEASUREMENT_POINT_NOTE_ANCHOR = "硬度测点编号方法";
     private static final Collator ZH_CN_COLLATOR = Collator.getInstance(Locale.forLanguageTag("zh-CN"));
 
@@ -371,6 +371,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     private static final String ET_DOC_NUMBER = "CL/JC22/BG01-2024 (B/0)";
     private static final int ET_DATA_ROWS_PER_PAGE = 20;
     private static final String MET_DOC_NUMBER = "CL/JC30/BG01-2024 (B/0)";
+    /** 金相标尺裁剪图 Word 嵌入尺寸：7.20cm × 5.25cm */
+    private static final int MET_CROPPED_IMAGE_WIDTH_PT = 204;
+    private static final int MET_CROPPED_IMAGE_HEIGHT_PT = 149;
+    private static final int MET_CROPPED_IMAGES_PER_PAGE = 4;
+    private static final int MET_CROPPED_GRID_COLS = 2;
+    private static final int MET_CROPPED_GRID_ROWS = 2;
     private static final String MET_DEFAULT_ETCHANT = "4%硝酸酒精溶液";
     /** 目视检测单项报告文档编号 */
     private static final String VIS_DOC_NUMBER = "CL/JC31/BG01-2024 (B/0)";
@@ -8297,18 +8303,44 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     attachment.getImageUrls(),
                     objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)
             );
+            List<Boolean> metCroppedFlags = parseMetCroppedFlagsJson(attachment.getMetCroppedFlags(), imageUrls.size());
             String description = attachment.getDescription();
-            for (String imageUrl : imageUrls) {
+            for (int i = 0; i < imageUrls.size(); i++) {
+                String imageUrl = imageUrls.get(i);
                 Integer imageId = extractImageIdFromUrl(imageUrl);
                 if (imageId != null) {
                     Image image = imageRepository.findById(imageId).orElse(null);
-                    if (image != null && Files.exists(Paths.get(image.getStoragePath()))) {
-                        allImages.add(new ImageInfo(image, description));
+                    Path imgPath = image != null ? resolveStoredImagePathForWord(image) : null;
+                    if (image != null && imgPath != null && Files.exists(imgPath)) {
+                        boolean metCropped = i < metCroppedFlags.size() && Boolean.TRUE.equals(metCroppedFlags.get(i));
+                        allImages.add(new ImageInfo(image, description, metCropped));
                     }
                 }
             }
         }
         return allImages;
+    }
+
+    private List<Boolean> parseMetCroppedFlagsJson(String json, int imageCount) {
+        List<Boolean> result = new ArrayList<>();
+        for (int i = 0; i < imageCount; i++) {
+            result.add(false);
+        }
+        if (json == null || json.isBlank() || imageCount == 0) {
+            return result;
+        }
+        try {
+            List<Boolean> parsed = objectMapper.readValue(
+                    json,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, Boolean.class)
+            );
+            for (int i = 0; i < imageCount; i++) {
+                result.set(i, i < parsed.size() && Boolean.TRUE.equals(parsed.get(i)));
+            }
+        } catch (Exception e) {
+            log.warn("解析 metCroppedFlags 失败: {}", e.getMessage());
+        }
+        return result;
     }
 
     private List<ImageInfo> collectImageInfosForProject(Project project) throws Exception {
@@ -8413,7 +8445,20 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             String docNumber,
             boolean useChemPersonnel
     ) throws Exception {
-        List<ImageInfo> allImages = collectImageInfosForReport(report);
+        generateImageAppendix(document, report, project, reportTitle, docNumber, useChemPersonnel,
+                collectImageInfosForReport(report), 1);
+    }
+
+    private void generateImageAppendix(
+            XWPFDocument document,
+            Report report,
+            Project project,
+            String reportTitle,
+            String docNumber,
+            boolean useChemPersonnel,
+            List<ImageInfo> allImages,
+            int startImageNumber
+    ) throws Exception {
         if (allImages.isEmpty()) {
             if (report.getImageAttachments() == null || report.getImageAttachments().isEmpty()) {
                 log.debug("Report {} has no image attachments", report.getId());
@@ -8429,7 +8474,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         // ========== 2. 按每页2张分组并生成页面 ==========
         int imagesPerPage = 2;
         int totalPages = (allImages.size() + imagesPerPage - 1) / imagesPerPage;
-        int imageNumber = 1; // 图片序号，从1开始
+        int imageNumber = startImageNumber;
 
         for (int pageIndex = 0; pageIndex < totalPages; pageIndex++) {
             int startIndex = pageIndex * imagesPerPage;
@@ -8604,15 +8649,250 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
+     * 金相标尺裁剪图附页：外框单格 + 内部 2×2 无边框排版，每页 4 张，尺寸 7.20×5.25 cm。
+     *
+     * @return 下一可用图序号
+     */
+    private int generateMetCroppedImageAppendix(
+            XWPFDocument document,
+            Report report,
+            Project project,
+            List<ImageInfo> croppedImages,
+            String reportTitle,
+            String docNumber,
+            boolean useChemPersonnel,
+            int startImageNumber
+    ) throws Exception {
+        if (croppedImages.isEmpty()) {
+            return startImageNumber;
+        }
+
+        int imagesPerPage = MET_CROPPED_IMAGES_PER_PAGE;
+        int totalPages = (croppedImages.size() + imagesPerPage - 1) / imagesPerPage;
+        int imageNumber = startImageNumber;
+
+        for (int pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+            int startIndex = pageIndex * imagesPerPage;
+            int endIndex = Math.min(startIndex + imagesPerPage, croppedImages.size());
+            List<ImageInfo> pageImages = croppedImages.subList(startIndex, endIndex);
+
+            XWPFParagraph companyTitle = document.createParagraph();
+            companyTitle.setAlignment(ParagraphAlignment.CENTER);
+            companyTitle.setSpacingBefore(0);
+            companyTitle.setSpacingAfter(0);
+            setExactLineSpacing(companyTitle, 20);
+            XWPFRun companyRun = companyTitle.createRun();
+            companyRun.setFontFamily("黑体");
+            companyRun.setFontSize(14);
+            companyRun.setText(brandingCompanyName());
+
+            XWPFParagraph reportTitlePara = document.createParagraph();
+            reportTitlePara.setAlignment(ParagraphAlignment.CENTER);
+            reportTitlePara.setSpacingBefore(0);
+            reportTitlePara.setSpacingAfter(0);
+            setExactLineSpacing(reportTitlePara, 20);
+            XWPFRun reportRun = reportTitlePara.createRun();
+            reportRun.setFontFamily("黑体");
+            reportRun.setFontSize(14);
+            reportRun.setText(reportTitle);
+
+            XWPFParagraph docNumberPara = document.createParagraph();
+            docNumberPara.setAlignment(ParagraphAlignment.RIGHT);
+            docNumberPara.setSpacingBefore(0);
+            docNumberPara.setSpacingAfter(0);
+            docNumberPara.setSpacingLineRule(LineSpacingRule.EXACT);
+            docNumberPara.setSpacingBetween(1.0);
+            XWPFRun docRun = docNumberPara.createRun();
+            docRun.setFontFamily("宋体");
+            docRun.setFontSize(10.5);
+            docRun.setText(docNumber);
+
+            XWPFTable imageTable = document.createTable(1, 4);
+            setupTableProperties(imageTable, PT_TABLE_WIDTH);
+
+            XWPFTableRow headerRow1 = imageTable.getRow(0);
+            setRowHeight(headerRow1, 454);
+            createTableCell(headerRow1.getCell(0), "项目名称", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(headerRow1.getCell(1), projectNameCellText(project), 7181, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER, 3);
+
+            XWPFTableRow headerRow2 = imageTable.createRow();
+            setRowHeight(headerRow2, 454);
+            createTableCell(headerRow2.getCell(0), "单项报告编号", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(headerRow2.getCell(1), brandingReportNumberForDisplay(report), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(headerRow2.getCell(2), "记录编号", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(headerRow2.getCell(3), generateRecordNumber(report), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+
+            XWPFTableRow imageContentRow = imageTable.createRow();
+            setRowHeight(imageContentRow, 10432);
+            XWPFTableCell imageCell = imageContentRow.getCell(0);
+            createTableCell(imageCell, "", PT_TABLE_WIDTH, ParagraphAlignment.LEFT, XWPFTableCell.XWPFVertAlign.TOP, 4);
+            XWPFParagraph labelPara = imageCell.getParagraphs().isEmpty()
+                    ? imageCell.addParagraph() : imageCell.getParagraphs().get(0);
+            labelPara.setAlignment(ParagraphAlignment.LEFT);
+            while (!labelPara.getRuns().isEmpty()) {
+                labelPara.removeRun(0);
+            }
+            XWPFRun labelRun = labelPara.createRun();
+            labelRun.setFontFamily("宋体");
+            labelRun.setFontSize(10);
+            labelRun.setText("附图：");
+            imageNumber = addMetCroppedImagesInBorderlessGrid(imageCell, pageImages, imageNumber);
+
+            XWPFTableRow signRow1 = imageTable.createRow();
+            setRowHeight(signRow1, 454);
+            String writeName;
+            String reviewName;
+            String approveName;
+            if (useChemPersonnel) {
+                createTableCell(signRow1.getCell(0), "编制/日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                writeName = signatureLineForReport(report, project, "writer", project.getWriterChem(), project.getWriterDateChem());
+                createTableCell(signRow1.getCell(1), writeName, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(signRow1.getCell(2), "审核/日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                reviewName = signatureLineForReport(report, project, "reviewer", project.getReviewerChem(), project.getReviewDateChem());
+                createTableCell(signRow1.getCell(3), reviewName, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+
+                XWPFTableRow signRow2 = imageTable.createRow();
+                setRowHeight(signRow2, 454);
+                createTableCell(signRow2.getCell(0), "批准/日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                approveName = signatureLineForReport(report, project, "approver", project.getApproverChem(), project.getApprovalDateChem());
+                createTableCell(signRow2.getCell(1), approveName, 7181, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER, 3);
+            } else {
+                createTableCell(signRow1.getCell(0), "编制（级别）/日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                writeName = signatureLineForNdtWithLevel(report, project, project.getWriterNdt(), project.getWriterDateNdt(), "writer");
+                createTableCell(signRow1.getCell(1), writeName, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(signRow1.getCell(2), "审核（级别）/日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                reviewName = signatureLineForNdtWithLevel(report, project, project.getReviewerNdt(), project.getReviewDateNdt(), "reviewer");
+                createTableCell(signRow1.getCell(3), reviewName, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+
+                XWPFTableRow signRow2 = imageTable.createRow();
+                setRowHeight(signRow2, 454);
+                createTableCell(signRow2.getCell(0), "批准/日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                approveName = signatureLineForReport(report, project, "approver", project.getApproverNdt(), project.getApprovalDateNdt());
+                createTableCell(signRow2.getCell(1), approveName, 7181, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER, 3);
+            }
+
+            document.createParagraph().createRun().addBreak(BreakType.PAGE);
+        }
+        return imageNumber;
+    }
+
+    /**
+     * 在大附图单元格内用无边框 2×2 嵌套表排版（仅外框可见，内部无十字线）。
+     */
+    private int addMetCroppedImagesInBorderlessGrid(
+            XWPFTableCell imageCell,
+            List<ImageInfo> pageImages,
+            int imageNumber
+    ) throws Exception {
+        CTTbl ctTbl = imageCell.getCTTc().addNewTbl();
+        XWPFTable gridTable = new XWPFTable(ctTbl, imageCell);
+        int halfTableWidth = PT_TABLE_WIDTH / MET_CROPPED_GRID_COLS;
+        setupBorderlessTableProperties(gridTable, PT_TABLE_WIDTH);
+
+        CTTblGrid tblGrid = ctTbl.getTblGrid();
+        if (tblGrid == null) {
+            tblGrid = ctTbl.addNewTblGrid();
+        }
+        while (tblGrid.sizeOfGridColArray() < MET_CROPPED_GRID_COLS) {
+            CTTblGridCol gridCol = tblGrid.addNewGridCol();
+            gridCol.setW(BigInteger.valueOf(halfTableWidth));
+        }
+
+        while (gridTable.getNumberOfRows() < MET_CROPPED_GRID_ROWS) {
+            gridTable.createRow();
+        }
+
+        for (int r = 0; r < MET_CROPPED_GRID_ROWS; r++) {
+            XWPFTableRow gridRow = gridTable.getRow(r);
+            while (gridRow.getTableCells().size() < MET_CROPPED_GRID_COLS) {
+                gridRow.addNewTableCell();
+            }
+            setRowHeight(gridRow, 4800);
+            for (int c = 0; c < MET_CROPPED_GRID_COLS; c++) {
+                int slot = r * MET_CROPPED_GRID_COLS + c;
+                ImageInfo imageInfo = slot < pageImages.size() ? pageImages.get(slot) : null;
+                imageNumber = addMetCroppedImageToNestedCell(
+                        gridRow.getCell(c), imageInfo, imageNumber, halfTableWidth);
+            }
+        }
+        return imageNumber;
+    }
+
+    private void setupBorderlessTableProperties(XWPFTable table, int width) {
+        setupTableProperties(table, width);
+        CTTblPr tblPr = table.getCTTbl().getTblPr();
+        if (tblPr == null) {
+            return;
+        }
+        CTTblBorders borders = tblPr.isSetTblBorders() ? tblPr.getTblBorders() : tblPr.addNewTblBorders();
+        setBorder(borders.isSetTop() ? borders.getTop() : borders.addNewTop(), STBorder.NIL, 0);
+        setBorder(borders.isSetBottom() ? borders.getBottom() : borders.addNewBottom(), STBorder.NIL, 0);
+        setBorder(borders.isSetLeft() ? borders.getLeft() : borders.addNewLeft(), STBorder.NIL, 0);
+        setBorder(borders.isSetRight() ? borders.getRight() : borders.addNewRight(), STBorder.NIL, 0);
+        setBorder(borders.isSetInsideH() ? borders.getInsideH() : borders.addNewInsideH(), STBorder.NIL, 0);
+        setBorder(borders.isSetInsideV() ? borders.getInsideV() : borders.addNewInsideV(), STBorder.NIL, 0);
+    }
+
+    /**
+     * 无边框嵌套表单元格内嵌入金相裁剪图与图注。
+     */
+    private int addMetCroppedImageToNestedCell(
+            XWPFTableCell cell,
+            ImageInfo imageInfo,
+            int imageNumber,
+            int widthTwips
+    ) throws Exception {
+        createTableCell(cell, "", widthTwips, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+        clearMetCroppedAppendixCellBorders(cell);
+        if (imageInfo == null) {
+            return imageNumber;
+        }
+
+        XWPFParagraph imageParagraph = cell.getParagraphs().isEmpty() ? cell.addParagraph() : cell.getParagraphs().get(0);
+        imageParagraph.setAlignment(ParagraphAlignment.CENTER);
+        XWPFRun imageRun = imageParagraph.createRun();
+        imageRun.setFontFamily("宋体");
+        imageRun.setFontSize(10.5);
+
+        Path imgPath = resolveStoredImagePathForWord(imageInfo.image);
+        if (imgPath != null && Files.exists(imgPath)) {
+            try (WordEmbedImageUtil.PreparedPicture pic = WordEmbedImageUtil.prepare(imgPath, imageInfo.image.getFileName())) {
+                imageRun.addPicture(pic.stream(), pic.poiPictureType(), pic.embedFileName(),
+                        Units.toEMU(MET_CROPPED_IMAGE_WIDTH_PT), Units.toEMU(MET_CROPPED_IMAGE_HEIGHT_PT));
+            }
+        } else {
+            log.warn("Image path missing for MET cropped appendix image {}", imageInfo.image.getId());
+        }
+
+        XWPFParagraph captionParagraph = cell.addParagraph();
+        captionParagraph.setAlignment(ParagraphAlignment.CENTER);
+        XWPFRun captionRun = captionParagraph.createRun();
+        captionRun.setFontFamily("宋体");
+        captionRun.setFontSize(10.5);
+        if (imageInfo.description != null && !imageInfo.description.isEmpty()) {
+            captionRun.setText("图" + imageNumber + " " + imageInfo.description);
+        } else {
+            captionRun.setText("图" + imageNumber);
+        }
+        return imageNumber + 1;
+    }
+
+    /**
      * 图片信息内部类
      */
     private static class ImageInfo {
         final Image image;
         final String description;
+        final boolean metCropped;
 
         ImageInfo(Image image, String description) {
+            this(image, description, false);
+        }
+
+        ImageInfo(Image image, String description, boolean metCropped) {
             this.image = image;
             this.description = description;
+            this.metCropped = metCropped;
         }
     }
 
@@ -8690,6 +8970,19 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         border.setVal(borderType);
         border.setSz(BigInteger.valueOf(size));
         border.setColor("000000");
+    }
+
+    /** 金相裁剪附图区：去掉单元格边框，避免 2×2 图片网格出现表格线 */
+    private void clearMetCroppedAppendixCellBorders(XWPFTableCell cell) {
+        if (cell == null) {
+            return;
+        }
+        CTTcPr tcPr = cell.getCTTc().isSetTcPr() ? cell.getCTTc().getTcPr() : cell.getCTTc().addNewTcPr();
+        CTTcBorders borders = tcPr.isSetTcBorders() ? tcPr.getTcBorders() : tcPr.addNewTcBorders();
+        setBorder(borders.isSetTop() ? borders.getTop() : borders.addNewTop(), STBorder.NIL, 0);
+        setBorder(borders.isSetBottom() ? borders.getBottom() : borders.addNewBottom(), STBorder.NIL, 0);
+        setBorder(borders.isSetLeft() ? borders.getLeft() : borders.addNewLeft(), STBorder.NIL, 0);
+        setBorder(borders.isSetRight() ? borders.getRight() : borders.addNewRight(), STBorder.NIL, 0);
     }
 
     /**
@@ -10795,7 +11088,31 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         document.createParagraph().createRun().addBreak(BreakType.PAGE);
 
         // ========== 10. 附图附页(如果有imageAttachments) ==========
-        generateImageAppendix(document, report, project, "金相检测报告（附页）", MET_DOC_NUMBER, true);
+        try {
+            List<ImageInfo> allMetImages = collectImageInfosForReport(report);
+            List<ImageInfo> croppedMetImages = new ArrayList<>();
+            List<ImageInfo> nonCroppedMetImages = new ArrayList<>();
+            for (ImageInfo info : allMetImages) {
+                if (info.metCropped) {
+                    croppedMetImages.add(info);
+                } else {
+                    nonCroppedMetImages.add(info);
+                }
+            }
+            int nextImageNumber = 1;
+            if (!croppedMetImages.isEmpty()) {
+                nextImageNumber = generateMetCroppedImageAppendix(
+                        document, report, project, croppedMetImages,
+                        "金相检测报告（附页）", MET_DOC_NUMBER, true, nextImageNumber);
+            }
+            if (!nonCroppedMetImages.isEmpty()) {
+                generateImageAppendix(document, report, project, "金相检测报告（附页）", MET_DOC_NUMBER, true,
+                        nonCroppedMetImages, nextImageNumber);
+            }
+        } catch (Exception appendixEx) {
+            log.error("Error generating Metallographic image appendix for report {}: {}",
+                    report.getId(), appendixEx.getMessage(), appendixEx);
+        }
         
         log.debug("Completed generating Metallographic report for report {}", report.getId());
     }
@@ -16185,7 +16502,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         // 标题行（跨14列）
         XWPFTableRow resultTitleRow = resultTable.getRow(0);
         setRowHeight(resultTitleRow, 454);
-        createTableCell(resultTitleRow.getCell(0), "检 测 结 果 (单位: HLD)", 9028, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER, 14);
+        createTableCell(resultTitleRow.getCell(0), "检 测 结 果 (单位: HBHLD)", 9028, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER, 14);
 
         // 检测结果表头（左右两组，每组7列：编号、1、2、3、4、5、平均）
         XWPFTableRow resultHeaderRow = resultTable.createRow();

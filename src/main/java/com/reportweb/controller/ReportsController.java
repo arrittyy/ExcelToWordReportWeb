@@ -631,6 +631,7 @@ public class ReportsController {
                     attachment.setImageUrls(objectMapper.writeValueAsString(attachmentDTO.getImageUrls()));
                     attachment.setDescription(attachmentDTO.getDescription());
                     attachment.setDisplayOrder(i);
+                    attachment.setMetCroppedFlags(serializeMetCroppedFlags(attachmentDTO));
                     imageAttachmentRepository.save(attachment);
                 }
             }
@@ -817,6 +818,7 @@ public class ReportsController {
                         attachment.setImageUrls(objectMapper.writeValueAsString(attachmentDTO.getImageUrls()));
                         attachment.setDescription(attachmentDTO.getDescription());
                         attachment.setDisplayOrder(i);
+                        attachment.setMetCroppedFlags(serializeMetCroppedFlags(attachmentDTO));
                         imageAttachmentRepository.save(attachment);
                     }
                 }
@@ -1449,7 +1451,46 @@ public class ReportsController {
             dto.setImageUrls(new ArrayList<>());
         }
 
+        dto.setMetCroppedFlags(parseMetCroppedFlags(attachment.getMetCroppedFlags(), dto.getImageUrls()));
+
         return dto;
+    }
+
+    private String serializeMetCroppedFlags(ImageAttachmentDTO attachmentDTO) throws Exception {
+        List<String> urls = attachmentDTO.getImageUrls();
+        if (urls == null || urls.isEmpty()) {
+            return null;
+        }
+        List<Boolean> flags = attachmentDTO.getMetCroppedFlags();
+        List<Boolean> normalized = new ArrayList<>(urls.size());
+        for (int i = 0; i < urls.size(); i++) {
+            boolean cropped = flags != null && i < flags.size() && Boolean.TRUE.equals(flags.get(i));
+            normalized.add(cropped);
+        }
+        return objectMapper.writeValueAsString(normalized);
+    }
+
+    private List<Boolean> parseMetCroppedFlags(String json, List<String> imageUrls) {
+        int size = imageUrls != null ? imageUrls.size() : 0;
+        List<Boolean> result = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            result.add(false);
+        }
+        if (json == null || json.isBlank() || size == 0) {
+            return result;
+        }
+        try {
+            List<Boolean> parsed = objectMapper.readValue(
+                    json,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, Boolean.class)
+            );
+            for (int i = 0; i < size; i++) {
+                result.set(i, i < parsed.size() && Boolean.TRUE.equals(parsed.get(i)));
+            }
+        } catch (Exception e) {
+            log.warn("解析 metCroppedFlags 失败: {}", e.getMessage());
+        }
+        return result;
     }
 
     /**

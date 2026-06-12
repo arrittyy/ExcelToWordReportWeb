@@ -5416,6 +5416,7 @@ const ProjectDetailPage: React.FC = () => {
                           <div className="report-subcard-section">
                             <ImageAttachmentsTable
                               value={record.imageAttachments}
+                              experimentTypeCode={activeType.experimentType?.code}
                               onChange={(attachments) => {
                                 updateReportField(currentActiveType, rowIndex, 'imageAttachments', attachments);
                               }}

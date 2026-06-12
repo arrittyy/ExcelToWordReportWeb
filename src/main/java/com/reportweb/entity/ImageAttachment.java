@@ -27,6 +27,10 @@ public class ImageAttachment {
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder = 0; // 显示顺序
 
+    /** JSON 布尔数组，与 imageUrls 下标对应；金相 MET 标尺裁剪标记 */
+    @Column(name = "met_cropped_flags", columnDefinition = "text")
+    private String metCroppedFlags;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

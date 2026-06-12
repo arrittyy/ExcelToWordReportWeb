@@ -422,6 +422,8 @@ export interface ImageAttachment {
   imageUrls: string[];
   description: string;
   displayOrder?: number;
+  /** 与 imageUrls 下标一一对应；仅金相 MET 使用，缺省视为 false */
+  metCroppedFlags?: boolean[];
 }
 
 export interface ImageDTO {
