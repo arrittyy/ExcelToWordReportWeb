@@ -600,53 +600,28 @@ public class DefectDetectionService {
             }
 
             if ("LHT".equals(code) || "LHD".equals(code)) {
-                String tableDataJson = mergedTableDataJsonForCompare(report);
-                if (tableDataJson == null) {
-                    return Collections.emptyList();
-                }
+                String tableDataJson = firstItem.getTableData();
 
-                boolean hasBoltOrNutType = false;
-                try {
-                    JsonNode rows = mergedRowsFromFirstItemTableData(report);
-                    if (rows != null && rows.isArray()) {
-                        for (JsonNode row : rows) {
-                            JsonNode typeNode = row.get("类型");
-                            String type = typeNode != null ? typeNode.asText() : null;
-                            if (type != null && (type.contains("螺栓") || type.contains("螺帽"))) {
-                                hasBoltOrNutType = true;
-                                break;
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("里氏硬度缺陷判断时解析tableData失败，reportId={}", report.getId(), e);
-                }
-
-                if (hasBoltOrNutType) {
-                    String boltRange = materialProperty.get("里氏-螺栓");
-                    if (boltRange == null || boltRange.isEmpty()) {
-                        boltRange = materialProperty.get("里氏-管件");
-                        if (boltRange == null || boltRange.isEmpty()) {
-                            boltRange = materialProperty.get("里氏-钢管");
-                        }
-                        if (boltRange == null || boltRange.isEmpty()) {
-                            boltRange = materialProperty.get("里氏");
-                        }
-                    }
+                if (LeebHardnessModeResolver.isBoltOrNutMode(report, objectMapper)) {
+                    String boltRange = LeebHardnessModeResolver.resolveLeebBoltRange(materialProperty);
                     return dataComparisonService.compareLeebBoltAndNutRanges(
                             tableDataJson,
+                            report.getDetectionContent(),
                             boltRange,
                             "编号",
                             "平均",
-                            "类型",
-                            0.9
+                            "类型"
                     );
+                }
+                String mergedJson = mergedTableDataJsonForCompare(report);
+                if (mergedJson == null) {
+                    return Collections.emptyList();
                 }
                 String pipeRange = materialProperty.getOrDefault("里氏-管件", materialProperty.get("里氏"));
                 String weldRange = materialPropertyService.resolveLeebWeldRangeForComparison(materialProperty);
                 String steelPipeRange = materialProperty.get("里氏-钢管");
                 return dataComparisonService.compareLeebWithPipeAndWeldRanges(
-                        tableDataJson,
+                        mergedJson,
                         pipeRange,
                         weldRange,
                         steelPipeRange,

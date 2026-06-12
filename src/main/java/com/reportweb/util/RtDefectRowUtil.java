@@ -41,4 +41,18 @@ public final class RtDefectRowUtil {
         }
         return !NdtDefectRowUtil.isRecordOnlyDefectRow(row, supportsRecordOnlyFlag);
     }
+
+    /** 块内有效射线缺陷行数量（「缺陷位置、性质及数量」列有效且非记录行）。 */
+    public static int countEffectiveDefectRows(JsonNode rows, boolean supportsRecordOnlyFlag) {
+        if (rows == null || !rows.isArray()) {
+            return 0;
+        }
+        int count = 0;
+        for (JsonNode row : rows) {
+            if (hasEffectiveDefectColumn(row, supportsRecordOnlyFlag)) {
+                count++;
+            }
+        }
+        return count;
+    }
 }

@@ -2,6 +2,7 @@ package com.reportweb.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reportweb.util.TableDataMergeUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -372,25 +373,17 @@ public class DataComparisonService {
     }
 
     /**
-     * 里氏硬度专用比较方法：同一张表中按“类型”字段区分螺栓/螺帽，
-     * 螺帽范围为螺栓范围乘以给定系数（通常为 0.9）。
+     * 里氏硬度专用比较：螺栓/螺帽均使用同一 {@code boltRange}（材质库「里氏-螺栓」）。
+     * 行内 {@code typeField} 优先；缺失时按 {@code perContentRow} 块下标回退到 detectionContent.rows[i].type。
      * 仅对 {@code valueField}（一般为「平均」）判定；测点列不参与。
-     *
-     * @param tableDataJson 表格数据 JSON 字符串
-     * @param boltRange     螺栓硬度范围（如 197～241）
-     * @param numberField   编号字段名，一般为 "编号"
-     * @param valueField    实验值字段名，一般为 "平均"
-     * @param typeField     类型字段名，一般为 "类型"，内容为 "螺栓" 或 "螺帽"
-     * @param nutFactor     螺帽系数（如 0.9）
-     * @return 不符合标准的记录列表
      */
     public List<NonComplianceRecord> compareLeebBoltAndNutRanges(
             String tableDataJson,
+            Object detectionContent,
             String boltRange,
             String numberField,
             String valueField,
-            String typeField,
-            double nutFactor) {
+            String typeField) {
 
         List<NonComplianceRecord> result = new ArrayList<>();
 
@@ -402,60 +395,100 @@ public class DataComparisonService {
             return result;
         }
 
-        String nutRange = scaleRange(boltRange, nutFactor);
+        List<String> contentTypes = readDetectionContentRowTypes(detectionContent);
 
         try {
+            List<JsonNode> blocks = TableDataMergeUtil.perContentRowBlocks(tableDataJson, objectMapper);
+            if (!blocks.isEmpty()) {
+                for (int blockIndex = 0; blockIndex < blocks.size(); blockIndex++) {
+                    JsonNode block = blocks.get(blockIndex);
+                    String blockType = blockIndex < contentTypes.size() ? contentTypes.get(blockIndex) : "";
+                    JsonNode rows = block != null ? block.get("rows") : null;
+                    if (rows == null || !rows.isArray()) {
+                        continue;
+                    }
+                    for (JsonNode row : rows) {
+                        if (TableDataMergeUtil.isTrailingSlashPlaceholderRow(row)) {
+                            continue;
+                        }
+                        compareLeebBoltOrNutRow(
+                                row, blockType, boltRange, numberField, valueField, typeField, result);
+                    }
+                }
+                return result;
+            }
+
             JsonNode root = objectMapper.readTree(tableDataJson);
             JsonNode rows = root.get("rows");
             if (rows == null || !rows.isArray()) {
                 return result;
             }
-
+            String fallbackType = contentTypes.isEmpty() ? "" : contentTypes.get(0);
             for (JsonNode row : rows) {
-                String number = getFieldValue(row, numberField);
-                String actualValue = getFieldValue(row, valueField);
-                String type = getFieldValue(row, typeField);
-
-                boolean isNut = type != null && type.contains("螺帽");
-                boolean isBolt = type != null && type.contains("螺栓");
-
-                String standard;
-                String itemName;
-
-                if (isNut && nutRange != null && !nutRange.isEmpty()) {
-                    standard = nutRange;
-                    itemName = "螺帽硬度";
-                } else if (isBolt) {
-                    standard = boltRange;
-                    itemName = "螺栓硬度";
-                } else {
-                    // 类型未知：默认按螺栓处理
-                    standard = boltRange;
-                    itemName = "螺栓硬度";
-                }
-
-                if (standard == null || standard.trim().isEmpty()) {
+                if (TableDataMergeUtil.isTrailingSlashPlaceholderRow(row)) {
                     continue;
                 }
-
-                if (actualValue != null && !actualValue.trim().isEmpty() && !"/".equals(actualValue.trim())) {
-                    boolean ok = meetsStandard(standard, actualValue);
-                    if (!ok) {
-                        NonComplianceRecord record = new NonComplianceRecord();
-                        record.setNumber(number != null ? number : "");
-                        record.setItemName(itemName);
-                        record.setStandardValue(standard);
-                        record.setActualValue(actualValue);
-                        record.setResult("不符合标准要求");
-                        result.add(record);
-                    }
-                }
+                compareLeebBoltOrNutRow(row, fallbackType, boltRange, numberField, valueField, typeField, result);
             }
         } catch (Exception e) {
             log.warn("里氏硬度螺栓/螺帽比较时出错: {}", e.getMessage());
         }
 
         return result;
+    }
+
+    private void compareLeebBoltOrNutRow(
+            JsonNode row,
+            String blockTypeFallback,
+            String boltRange,
+            String numberField,
+            String valueField,
+            String typeField,
+            List<NonComplianceRecord> result) {
+
+        String number = getFieldValue(row, numberField);
+        String actualValue = getFieldValue(row, valueField);
+        String type = getFieldValue(row, typeField);
+        if (type == null || type.trim().isEmpty()) {
+            type = blockTypeFallback;
+        }
+
+        boolean isNut = LeebHardnessModeResolver.typeTextIsNut(type);
+        String itemName = isNut ? "螺帽硬度" : "螺栓硬度";
+
+        if (actualValue == null || actualValue.trim().isEmpty() || "/".equals(actualValue.trim())) {
+            return;
+        }
+
+        boolean ok = meetsStandard(boltRange, actualValue);
+        if (!ok) {
+            NonComplianceRecord record = new NonComplianceRecord();
+            record.setNumber(number != null ? number : "");
+            record.setItemName(itemName);
+            record.setStandardValue(boltRange);
+            record.setActualValue(actualValue);
+            record.setResult("不符合标准要求");
+            result.add(record);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> readDetectionContentRowTypes(Object detectionContent) {
+        List<String> types = new ArrayList<>();
+        if (detectionContent == null) {
+            return types;
+        }
+        try {
+            JsonNode node = objectMapper.valueToTree(detectionContent);
+            if (node != null && node.isObject() && node.has("rows") && node.get("rows").isArray()) {
+                for (JsonNode row : node.get("rows")) {
+                    types.add(row.has("type") ? row.get("type").asText("") : "");
+                }
+            }
+        } catch (Exception e) {
+            log.debug("readDetectionContentRowTypes: {}", e.getMessage());
+        }
+        return types;
     }
 
     /**

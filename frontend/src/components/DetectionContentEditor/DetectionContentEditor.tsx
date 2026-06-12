@@ -83,6 +83,8 @@ interface DetectionContentEditorProps {
     selectedIds: number[];
     options: { label: string; value: number }[];
   };
+  /** 只读编号/总计时，从检测数据实时推算的预览值（保存前展示） */
+  autoFillPreview?: (rowIndex: number) => { locationNumber?: string; total?: string };
 }
 
 const ensureValueMatchesMode = (
@@ -120,6 +122,7 @@ const DetectionContentEditor: React.FC<DetectionContentEditorProps> = ({
   onTextPreview,
   detectionDataButton,
   multiRowComponentSelect,
+  autoFillPreview,
 }) => {
   const normalizedValue = ensureValueMatchesMode(value, config);
   const [editingRows, setEditingRows] = useState<Set<number>>(new Set());
@@ -564,8 +567,9 @@ const DetectionContentEditor: React.FC<DetectionContentEditorProps> = ({
         key: 'locationNumber',
         width: 160,
         render: (_: any, record: DetectionContentTableRow, index: number) => {
+          const preview = autoFillPreview?.(index);
           if (isLocationNumberReadOnly) {
-            return record.locationNumber || '-';
+            return record.locationNumber || preview?.locationNumber || '-';
           }
           if (isEditing(index)) {
             return (
@@ -589,8 +593,9 @@ const DetectionContentEditor: React.FC<DetectionContentEditorProps> = ({
         key: 'total',
         width: 140,
         render: (_: any, record: DetectionContentTableRow, index: number) => {
+          const preview = autoFillPreview?.(index);
           if (isTotalReadOnly) {
-            return record.total || '-';
+            return record.total || preview?.total || '-';
           }
           if (isEditing(index)) {
             return (

@@ -14,12 +14,13 @@ import {
   Statistic,
   Select,
   Modal,
+  Dropdown,
+  Tooltip,
   Drawer,
   DatePicker,
   Form,
   Divider,
   List,
-  Tooltip,
   Upload,
   Collapse,
   Input,
@@ -44,6 +45,7 @@ import {
   ArrowRightOutlined,
   SettingOutlined,
   HistoryOutlined,
+  RollbackOutlined,
   UploadOutlined,
   DownOutlined,
   UpOutlined,
@@ -55,6 +57,7 @@ import './ProjectDetailPage.css';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { isSubUser } from '@/utils/auth';
 import { projectService, type ApprovalLogEntry, type WordExportJob } from '@/services/projectService';
 import { RUNDIAN_PERSONNEL_NAMES } from '@/constants/rundianPersonnel';
 import { reportService } from '@/services/reportService';
@@ -346,15 +349,15 @@ function ensureTableTypeOptionsIncludeCustom(config: DetectionContentConfig): De
 const detectionContentConfigMap: Record<string, DetectionContentConfig> = {
   '超声检测': {
     mode: 'table',
-    typeOptions: ['对接焊缝', '弯头', '绝缘子', '螺栓', '叶片（表面波）', '轴瓦', '轴颈', '推力瓦', '密封瓦', '角焊缝', '自定义'],
+    typeOptions: ['对接焊缝', '弯头', '弯管', '绝缘子', '螺栓', '叶片（表面波）', '轴瓦', '轴颈', '推力瓦', '密封瓦', '角焊缝', '自定义'],
   },
   '渗透检测': {
     mode: 'table',
-    typeOptions: ['对接焊缝', '弯头', '轴瓦', '推力瓦', '密封瓦', '角焊缝', '自定义'],
+    typeOptions: ['对接焊缝', '弯头', '弯管', '轴瓦', '推力瓦', '密封瓦', '角焊缝', '自定义'],
   },
   '磁粉检测': {
     mode: 'table',
-    typeOptions: ['对接焊缝', '弯头', '角焊缝', '热工仪表管-角焊缝对接焊缝', '受热面联箱-角焊缝对接焊缝', '自定义'],
+    typeOptions: ['对接焊缝', '弯头', '弯管', '角焊缝', '热工仪表管-角焊缝对接焊缝', '受热面联箱-角焊缝对接焊缝', '自定义'],
   },
   '射线检测': {
     mode: 'table',
@@ -390,7 +393,7 @@ const detectionContentConfigMap: Record<string, DetectionContentConfig> = {
   },
   '超声波测厚': {
     mode: 'table',
-    typeOptions: ['对接焊缝', '直管段', '弯头', '自定义'],
+    typeOptions: ['对接焊缝', '直管段', '弯头', '弯管', '自定义'],
     readOnlyFields: ['locationNumber', 'total'],
     requireMinRequiredThickness: true,
   },
@@ -414,7 +417,7 @@ const detectionContentConfigMap: Record<string, DetectionContentConfig> = {
   },
   '合金分析检测': {
     mode: 'table',
-    typeOptions: ['焊缝', '弯头', '母管', '自定义'],
+    typeOptions: ['焊缝', '弯头', '弯管', '母管', '自定义'],
     readOnlyFields: ['locationNumber', 'total'],
   },
   '相控阵超声波检测': {
@@ -423,17 +426,17 @@ const detectionContentConfigMap: Record<string, DetectionContentConfig> = {
   },
   '圆度测量': {
     mode: 'table',
-    typeOptions: ['弯头'],
+    typeOptions: ['弯头', '弯管'],
     readOnlyFields: ['locationNumber', 'total'],
   },
   '维氏硬度检测': {
     mode: 'table',
-    typeOptions: ['对接焊缝', '弯头', '螺栓', '螺帽', '大轴', '母管', '自定义'],
+    typeOptions: ['对接焊缝', '弯头', '弯管', '螺栓', '螺帽', '大轴', '母管', '自定义'],
     readOnlyFields: ['locationNumber', 'total'],
   },
   '洛氏硬度检测': {
     mode: 'table',
-    typeOptions: ['对接焊缝', '弯头', '螺栓', '螺帽', '大轴', '母管', '自定义'],
+    typeOptions: ['对接焊缝', '弯头', '弯管', '螺栓', '螺帽', '大轴', '母管', '自定义'],
     readOnlyFields: ['locationNumber', 'total'],
   },
   '金相检测': {
@@ -482,7 +485,7 @@ const getDetectionContentConfigByName = (typeName?: string): DetectionContentCon
     (typeName ? detectionContentConfigMap[typeName] : null) || defaultDetectionContentConfig,
   );
 
-/** 5 种检测类型：检测内容区域上方显示「检测内容、位置编号、总计」只读块（与后端自动填充一致） */
+/** 部分检测类型：检测内容区域上方显示「类型、位置编号、总计」只读摘要（与后端自动填充一致） */
 const AUTO_FILL_READONLY_TYPE_NAMES: string[] = [
   '冲击吸收能量检测',
   '室温拉伸检测',
@@ -897,20 +900,44 @@ interface ApprovalFlowCardProps {
   project: ProjectDetail;
   fullName: string;
   isProjectTypeMissing: boolean;
+  canRollbackApproval: boolean;
   submitApprovalMutation: { mutate: (p: { track: 'ndt' | 'chem' | 'both' }) => void; isPending: boolean };
   approvalPassMutation: { mutate: (t: 'ndt' | 'chem') => void; isPending: boolean };
   approvalRejectMutation: { mutate: (t: 'ndt' | 'chem') => void; isPending: boolean };
+  approvalRollbackMutation: {
+    mutate: (t: 'ndt' | 'chem') => void;
+    mutateAsync: (t: 'ndt' | 'chem') => Promise<unknown>;
+    isPending: boolean;
+  };
   onRefresh: () => void;
   projectId: number;
 }
+
+const trackHasApprovalData = (
+  step: number,
+  rejectionStep: number | null | undefined,
+  writer?: string,
+  reviewer?: string,
+  approver?: string,
+  writerDate?: string,
+  reviewDate?: string,
+  approvalDate?: string,
+): boolean => {
+  if (step > 0) return true;
+  if (rejectionStep != null) return true;
+  if ([writer, reviewer, approver].some((n) => n != null && n.trim() !== '')) return true;
+  return [writerDate, reviewDate, approvalDate].some((d) => d != null && d !== '');
+};
 
 const ApprovalFlowCard: React.FC<ApprovalFlowCardProps> = ({
   project,
   fullName,
   isProjectTypeMissing,
+  canRollbackApproval,
   submitApprovalMutation,
   approvalPassMutation,
   approvalRejectMutation,
+  approvalRollbackMutation,
   onRefresh,
   projectId,
 }) => {
@@ -1127,6 +1154,83 @@ const ApprovalFlowCard: React.FC<ApprovalFlowCardProps> = ({
   const rejectionStepNdt = project.rejectionStepNdt ?? null;
   const rejectionStepChem = project.rejectionStepChem ?? null;
 
+  const canRollbackNdt = canRollbackApproval && trackHasApprovalData(
+    ndtStep,
+    rejectionStepNdt,
+    project.writerNdt,
+    project.reviewerNdt,
+    project.approverNdt,
+    project.writerDateNdt,
+    project.reviewDateNdt,
+    project.approvalDateNdt,
+  );
+  const canRollbackChem = canRollbackApproval && trackHasApprovalData(
+    chemStep,
+    rejectionStepChem,
+    project.writerChem,
+    project.reviewerChem,
+    project.approverChem,
+    project.writerDateChem,
+    project.reviewDateChem,
+    project.approvalDateChem,
+  );
+  const showRollbackButton = canRollbackNdt || canRollbackChem;
+
+  const confirmRollbackTrack = (track: 'ndt' | 'chem', trackLabel: string) => {
+    Modal.confirm({
+      title: '确认回退',
+      content: `将清空${trackLabel}审批人员与进度，回退到未设置状态，是否继续？`,
+      okText: '确认回退',
+      cancelText: '取消',
+      onOk: () => approvalRollbackMutation.mutateAsync(track),
+    });
+  };
+
+  const rollbackButton = canRollbackApproval ? (
+    showRollbackButton ? (
+      canRollbackNdt && canRollbackChem ? (
+        <Dropdown
+          menu={{
+            items: [
+              {
+                key: 'ndt',
+                label: '无损检测',
+                onClick: () => confirmRollbackTrack('ndt', '无损检测'),
+              },
+              {
+                key: 'chem',
+                label: '理化检测',
+                onClick: () => confirmRollbackTrack('chem', '理化检测'),
+              },
+            ],
+          }}
+          disabled={approvalRollbackMutation.isPending}
+        >
+          <Button type="primary" icon={<RollbackOutlined />} loading={approvalRollbackMutation.isPending}>
+            回退
+          </Button>
+        </Dropdown>
+      ) : (
+        <Popconfirm
+          title={`将清空${canRollbackNdt ? '无损检测' : '理化检测'}审批人员与进度，回退到未设置状态，是否继续？`}
+          onConfirm={() => approvalRollbackMutation.mutate(canRollbackNdt ? 'ndt' : 'chem')}
+          okText="确认回退"
+          cancelText="取消"
+        >
+          <Button type="primary" icon={<RollbackOutlined />} loading={approvalRollbackMutation.isPending}>
+            回退
+          </Button>
+        </Popconfirm>
+      )
+    ) : (
+      <Tooltip title="当前轨道无需回退">
+        <Button type="primary" icon={<RollbackOutlined />} disabled>
+          回退
+        </Button>
+      </Tooltip>
+    )
+  ) : null;
+
   return (
     <>
       <Card
@@ -1137,6 +1241,7 @@ const ApprovalFlowCard: React.FC<ApprovalFlowCardProps> = ({
             <Button type="primary" icon={<SettingOutlined />} onClick={handleOpenSetting}>
               设置
             </Button>
+            {rollbackButton}
             <Button type="primary" icon={<HistoryOutlined />} onClick={() => setLogModalOpen(true)}>
               审批日志
             </Button>
@@ -1276,7 +1381,17 @@ const ApprovalFlowCard: React.FC<ApprovalFlowCardProps> = ({
                 <div>
                   <span style={{ marginRight: 8 }}>{dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')}</span>
                   <Tag>{item.track === 'ndt' ? '无损' : '理化'}</Tag>
-                  <Tag color="blue">{item.action === 'submit' ? '提交审批' : item.action === 'pass' ? '通过' : item.action === 'reject' ? '不通过' : item.action}</Tag>
+                  <Tag color="blue">
+                    {item.action === 'submit'
+                      ? '提交审批'
+                      : item.action === 'pass'
+                        ? '通过'
+                        : item.action === 'reject'
+                          ? '不通过'
+                          : item.action === 'rollback'
+                            ? '回退'
+                            : item.action}
+                  </Tag>
                   {item.actorName && <span>{item.actorName}</span>}
                 </div>
               </List.Item>
@@ -2409,6 +2524,35 @@ const ProjectDetailPage: React.FC = () => {
       message.error(err?.response?.data?.message || '操作失败');
     },
   });
+
+  const approvalRollbackMutation = useMutation({
+    mutationFn: (track: 'ndt' | 'chem') => projectService.approvalRollback(Number(id), track),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      queryClient.invalidateQueries({ queryKey: ['my-todos'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['approval-logs', Number(id)] });
+      message.success('已回退审批流程');
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || '回退失败');
+    },
+  });
+
+  const canRollbackApproval = useMemo(() => {
+    if (project?.canRollbackApproval != null) {
+      return project.canRollbackApproval;
+    }
+    if (!project || !user) return false;
+    if (isSubUser()) return false;
+    const currentUserId = user.userId?.trim();
+    if (currentUserId && project.userId && project.userId === currentUserId) {
+      return true;
+    }
+    const names = [user.fullName?.trim(), user.username?.trim()].filter(Boolean) as string[];
+    const responsible = project.responsiblePerson?.trim();
+    return !!responsible && names.some((n) => n === responsible);
+  }, [project, user]);
 
   const uploadSummaryNotificationSignedMutation = useMutation({
     mutationFn: (file: File) => projectService.uploadSummaryNotificationSigned(Number(id), file),
@@ -4954,14 +5098,21 @@ const ProjectDetailPage: React.FC = () => {
           <Space>
             {selectedReportIds.length > 0 && (
               <>
-                <Button
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={handleBatchDelete}
-                  loading={batchOperationLoading}
+                <Popconfirm
+                  title="确认删除"
+                  description={`确定要删除选中的 ${selectedReportIds.length} 个报告吗？`}
+                  onConfirm={() => void handleBatchDelete()}
+                  okText="确定"
+                  cancelText="取消"
                 >
-                  批量删除 ({selectedReportIds.length})
-                </Button>
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={batchOperationLoading}
+                  >
+                    批量删除 ({selectedReportIds.length})
+                  </Button>
+                </Popconfirm>
                 <Button
                   type="primary"
                   icon={<FileWordOutlined />}
@@ -5240,6 +5391,22 @@ const ProjectDetailPage: React.FC = () => {
                                   : undefined
                               }
                               multiRowComponentSelect={multiRowComponentSelect}
+                              autoFillPreview={
+                                detectionContentConfig.readOnlyFields?.includes('locationNumber')
+                                  ? (contentRowIndex) => {
+                                      const af = computeAutoFillFromTableData(
+                                        activeType.experimentType?.name || activeType.name || '',
+                                        activeType.experimentType?.code || '',
+                                        record.detectionData,
+                                        contentRowIndex,
+                                      );
+                                      return {
+                                        locationNumber: af.locationNumber,
+                                        total: af.total,
+                                      };
+                                    }
+                                  : undefined
+                              }
                             />
                           </div>
                         )}
@@ -5313,9 +5480,11 @@ const ProjectDetailPage: React.FC = () => {
                 project={project}
                 fullName={fullName}
                 isProjectTypeMissing={isProjectTypeMissing}
+                canRollbackApproval={canRollbackApproval}
                 submitApprovalMutation={submitApprovalMutation}
                 approvalPassMutation={approvalPassMutation}
                 approvalRejectMutation={approvalRejectMutation}
+                approvalRollbackMutation={approvalRollbackMutation}
                 onRefresh={() => {
                   queryClient.invalidateQueries({ queryKey: ['project', id] });
                   queryClient.invalidateQueries({ queryKey: ['projects'] });

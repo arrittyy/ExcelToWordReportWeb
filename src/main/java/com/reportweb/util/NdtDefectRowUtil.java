@@ -74,4 +74,18 @@ public final class NdtDefectRowUtil {
         }
         return false;
     }
+
+    /** 块内有效缺陷行数量（与 Word 缺陷表收集一致）。 */
+    public static int countEffectiveDefectRows(JsonNode rows, boolean supportsRecordOnlyFlag) {
+        if (rows == null || !rows.isArray()) {
+            return 0;
+        }
+        int count = 0;
+        for (JsonNode row : rows) {
+            if (isEffectiveDefectRow(row, supportsRecordOnlyFlag)) {
+                count++;
+            }
+        }
+        return count;
+    }
 }

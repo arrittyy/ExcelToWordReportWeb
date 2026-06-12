@@ -460,6 +460,17 @@ public class DetectionContentNarrativeService {
                 log.warn("Failed to parse detectionContent for report {}: {}", report.getId(), e.getMessage());
             }
         }
+        if (experimentType != null && experimentType.getCode() != null) {
+            String code = experimentType.getCode().trim();
+            if (("LHD".equals(code) || "LHT".equals(code)) && LeebHardnessModeResolver.isBoltOrNutTypeText(type)) {
+                if (locationDesc == null || locationDesc.trim().isEmpty()) {
+                    String endWaist = LeebHardnessModeResolver.extractBoltLeebEndWaist(type);
+                    if (!endWaist.isEmpty()) {
+                        locationDesc = endWaist;
+                    }
+                }
+            }
+        }
         return new DetectionContentDetail(methodName, componentName, type, total, locationDesc, locationNumber);
     }
 

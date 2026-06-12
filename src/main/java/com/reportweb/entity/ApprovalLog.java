@@ -22,7 +22,7 @@ public class ApprovalLog {
     private String track; // ndt | chem
 
     @Column(name = "action", length = 20, nullable = false)
-    private String action; // submit | pass | reject
+    private String action; // submit | pass | reject | rollback
 
     @Column(name = "actor_name", length = 200)
     private String actorName;

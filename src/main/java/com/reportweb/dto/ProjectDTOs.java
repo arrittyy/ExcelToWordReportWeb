@@ -37,6 +37,8 @@ public class ProjectDTOs {
         private Integer reportCount;
         private LocalDateTime createdAt;
         private String userFullName;
+        /** 项目归属主账号 ID */
+        private String userId;
         private String responsiblePerson;
         
         // 无损检测相关字段
@@ -89,6 +91,8 @@ public class ProjectDTOs {
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
         private String userFullName;
+        /** 项目归属主账号 ID */
+        private String userId;
         private String responsiblePerson;
         
         // 无损检测相关字段
@@ -121,6 +125,8 @@ public class ProjectDTOs {
         private List<ReportList> reports;
         /** 总检测日志按部件顺序（JSON 字符串，与库列一致） */
         private String aggregateDetectionLogOrder;
+        /** 当前登录用户是否可回退审批流程（主账号且为项目归属人或项目负责人） */
+        private Boolean canRollbackApproval;
         /** 第三方单项签批信息：key = experimentTypeId 字符串 */
         private Map<String, Map<String, String>> thirdPartyApprovalByExperimentType;
     }

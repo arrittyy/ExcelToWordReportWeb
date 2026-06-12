@@ -13,6 +13,8 @@ import com.reportweb.entity.*;
 import com.reportweb.service.ndt.NdtQualificationRegistry;
 import com.reportweb.util.InternalInspectorWhitelist;
 import com.reportweb.util.RecordNumberFormatter;
+import com.reportweb.util.ReportNumberAssignment;
+import com.reportweb.util.ReportWordDateFormat;
 import com.reportweb.util.ThirdPartyPlaceholders;
 import com.reportweb.util.ThirdPartyReportNumbering;
 import com.reportweb.util.PdmPipeCreepRules;
@@ -91,7 +93,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             Pattern.compile("^(?:检测结果|检测结论)\\s*[:：]\\s*");
     /** 总报告摘要：概述正文、发现问题及处理情况、工作内容等章节（含标题与首行缩进正文）行距倍数 */
     private static final double SUMMARY_SECTION_LINE_SPACING = 1.5;
-    /** 里氏硬度单项报告「检测部位」格内固定说明（概述不输出；仅 {@link #generateLeebHardnessReport}） */
+    /** 里氏硬度管件/对接焊缝「检测部位」格内固定说明（概述不输出；类型为管件/对接焊缝时追加） */
     private static final String LEE_HARDNESS_MEASUREMENT_POINT_NOTE =
             "硬度测点编号方法：水平段上侧为#-1测点、垂直段炉前侧为#-1测点、弯头背弧为#-1测点，顺汽流方向顺时针间隔90°依次为#-1、#-2、#-3、#-4测点；位置描述中「前」、「后」参照蒸汽流向确定（蒸汽先经过的为前侧）。";
     private static final String LEE_HARDNESS_MEASUREMENT_POINT_NOTE_ANCHOR = "硬度测点编号方法";
@@ -337,10 +339,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
      * 格式化日期为签名格式
      */
     private String formatDateForSignature(LocalDate date) {
-        if (date == null) {
-            return "";
-        }
-        return date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"));
+        return formatDateField(date, "");
     }
 
     /**
@@ -594,12 +593,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * 单项报告编号展示：
-     * 总报告润电段：子集内 projectNumber-001 递增（与概述全局编号可不同）；
-     * 总报告第三方段：思维奇/自定义 thirdPartyProjectNumber-001 递增；华图 thirdPartyProjectNumber-{TYPE}{001} 按类型递增；
-     * 未设置 ThreadLocal 时（如单独导出单项）：用库内 report_number。
+     * 单项报告编号展示：优先读 {@link Report#getReportNumber()}（经 {@link ReportNumberAssignment} 分配后写库/内存），
+     * UT 多段时叠加行偏移；仅当库内无编号时按 ThreadLocal 兜底重算。
      */
     private String brandingReportNumberForDisplay(Report report) {
+        String stored = report.getReportNumber();
+        if (stored != null && !stored.isBlank()) {
+            return storedReportNumberWithUtRowOffset(report);
+        }
+
         Boolean tp = BRANDING_THIRD_PARTY_APPENDIX.get();
         Project p = BRANDING_PROJECT.get();
         Integer idx = CURRENT_REPORT_INDEX_1_BASED.get();
@@ -620,7 +622,6 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             return ThirdPartyReportNumbering.formatLegacyNumber(base, displayIdx);
         }
 
-        // 润电段：总报告上下文中用子集序号 + 内部项目编号
         if (p != null && displayIdx != null && p.getProjectNumber() != null && !p.getProjectNumber().trim().isEmpty()) {
             return p.getProjectNumber().trim() + "-" + String.format("%03d", displayIdx);
         }
@@ -651,12 +652,9 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             syncReportNumbersToOverviewOrder(project, ordered);
 
             boolean thirdPartyBranding = usesThirdPartyBranding(project, report);
-            int subsetIndex = resolveBrandingDisplayIndex1Based(project, report, ordered, thirdPartyBranding);
-
             beginBrandingPass(project, thirdPartyBranding);
-            CURRENT_REPORT_INDEX_1_BASED.set(subsetIndex);
             try {
-                dispatchReportGeneration(report, project, subsetIndex, document);
+                dispatchReportGeneration(report, project, 1, document);
             } finally {
                 clearBrandingContext();
             }
@@ -693,55 +691,6 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         if (project.getProjectImageAttachments() != null) {
             project.getProjectImageAttachments().size();
         }
-    }
-
-    /**
-     * 当前报告在「润电子集 / 第三方子集」内按概述顺序的 1-based 序号（与总报告正文循环一致）。
-     */
-    private static int computeBrandingSubsetIndex1Based(
-            Project project, Report target, List<Report> orderedOverview, boolean thirdPartyBranding) {
-        int idx = 1;
-        for (Report r : orderedOverview) {
-            if (usesThirdPartyBranding(project, r) != thirdPartyBranding) {
-                continue;
-            }
-            if (Objects.equals(r.getId(), target.getId())) {
-                return idx;
-            }
-            idx++;
-        }
-        return 1;
-    }
-
-    /**
-     * 华图第三方：当前报告在概述顺序第三方子集中、同检测类型内的 1-based 序号。
-     */
-    private int computeBrandingTypeIndex1Based(
-            Project project, Report target, List<Report> orderedOverview) {
-        String targetCode = resolveExperimentTypeCodeForReport(target);
-        int idx = 1;
-        for (Report r : orderedOverview) {
-            if (!usesThirdPartyBranding(project, r)) {
-                continue;
-            }
-            if (!targetCode.equals(resolveExperimentTypeCodeForReport(r))) {
-                continue;
-            }
-            if (Objects.equals(r.getId(), target.getId())) {
-                return idx;
-            }
-            idx++;
-        }
-        return 1;
-    }
-
-    /** 展示用序号：华图第三方按检测类型子集，其余按润电/第三方全局子集。 */
-    private int resolveBrandingDisplayIndex1Based(
-            Project project, Report target, List<Report> orderedOverview, boolean thirdPartyBranding) {
-        if (thirdPartyBranding && ThirdPartyReportNumbering.usesPerTypeNumbering(project.getThirdPartyName())) {
-            return computeBrandingTypeIndex1Based(project, target, orderedOverview);
-        }
-        return computeBrandingSubsetIndex1Based(project, target, orderedOverview, thirdPartyBranding);
     }
 
     private String resolveExperimentTypeCodeForReport(Report report) {
@@ -1242,13 +1191,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     return sbEt.toString();
                 }
                 JsonNode etData = getDetectionDataFromReport(report);
-                boolean etHasTableData = etData != null && etData.has("rows") && etData.get("rows").isArray()
-                        && etData.get("rows").size() > 0;
+                List<JsonNode> defectRowsEt = etData != null
+                        ? collectDefectRows(etData, supportsRecordOnlyFlagForReport(report))
+                        : List.of();
+                boolean etHasTableData = !defectRowsEt.isEmpty();
                 String hasDefectEt = report.getHasDefect();
                 if ("是".equals(hasDefectEt)) {
                     return etHasTableData
-                            ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
-                            : "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示。";
+                            ? formatNdtDefectPresentResultParagraph(defectRowsEt.size(), NDT_DEFECT_PHRASE_DEFAULT, true)
+                            : formatNdtDefectPresentResultParagraph(0, NDT_DEFECT_PHRASE_DEFAULT, false);
                 }
                 if ("否".equals(hasDefectEt)) {
                     return "检测结果：\n  在上述检测条件下，被检部位未见缺陷显示，评定为Ⅰ级。";
@@ -1274,10 +1225,11 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 return wordConclusionRockwell(report);
             }
             if ("LHT".equals(code) || "LHD".equals(code)) {
-                DetectionContentDetail leebDetail = detectionContentNarrativeService.parseDetectionContentDetail(report, experimentType);
+                DetectionContentDetail leebDetail = detectionContentNarrativeService.parseDetectionContentDetailAtRow(
+                        report, experimentType, rowIdx);
                 String leebType = leebDetail.type != null ? leebDetail.type.trim() : "";
-                if (leebType.contains("螺栓") ||leebType.contains("螺帽")) {
-                    return wordConclusionBoltLeeb(report);
+                if (leebType.contains("螺栓") || leebType.contains("螺帽")) {
+                    return wordConclusionBoltLeeb(report, rowIdx);
                 }
                 return wordConclusionLeeb(report);
             }
@@ -1438,6 +1390,11 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     private String buildHardnessFamilyDetectionLocationCell(Report report, ExperimentType expTypeForNarr, boolean leebStandardTweaks) {
+        return buildHardnessFamilyDetectionLocationCell(report, expTypeForNarr, leebStandardTweaks, 0);
+    }
+
+    private String buildHardnessFamilyDetectionLocationCell(Report report, ExperimentType expTypeForNarr,
+            boolean leebStandardTweaks, int contentRowIndex) {
         List<JsonNode> resultRows = mergedTableDataRowsFromFirstReportItem(report);
         String componentName = getFieldValue(report, "componentName", "/");
         if (componentName == null || componentName.isEmpty()) {
@@ -1454,20 +1411,33 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 if (detectionContentNode.has("rows") && detectionContentNode.get("rows").isArray()) {
                     JsonNode rows = detectionContentNode.get("rows");
                     if (rows.size() > 0) {
-                        JsonNode firstRow = rows.get(0);
-                        if (firstRow.has("type")) {
-                            type = firstRow.get("type").asText();
+                        int idx = Math.min(Math.max(0, contentRowIndex), rows.size() - 1);
+                        JsonNode contentRow = rows.get(idx);
+                        if (contentRow.has("type")) {
+                            type = contentRow.get("type").asText();
                         }
-                        if (firstRow.has("locationDesc")) {
-                            locationDesc = firstRow.get("locationDesc").asText();
+                        if (contentRow.has("locationDesc")) {
+                            locationDesc = contentRow.get("locationDesc").asText();
                         }
-                        if (firstRow.has("locationNumber")) {
-                            locationNumber = firstRow.get("locationNumber").asText();
+                        if (contentRow.has("locationNumber")) {
+                            locationNumber = contentRow.get("locationNumber").asText();
+                        }
+                        if (contentRow.has("total")) {
+                            String rowTotal = contentRow.get("total").asText("");
+                            if (rowTotal != null && !rowTotal.trim().isEmpty()) {
+                                total = rowTotal.trim();
+                            }
                         }
                     }
                 }
             } catch (Exception e) {
                 log.warn("buildHardnessFamilyDetectionLocationCell: parse detectionContent {}: {}", report.getId(), e.getMessage());
+            }
+        }
+        if (leebStandardTweaks && LeebHardnessModeResolver.isBoltOrNutTypeText(type)) {
+            String endWaist = LeebHardnessModeResolver.extractBoltLeebEndWaist(type);
+            if (!endWaist.isEmpty() && (locationDesc == null || locationDesc.isEmpty() || "/".equals(locationDesc.trim()))) {
+                locationDesc = endWaist;
             }
         }
         if (type == null || type.isEmpty()) {
@@ -1494,11 +1464,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         if (methodName == null || methodName.isEmpty()) {
             methodName = "/";
         }
-        String _bodyLoc = detectionContentNarrativeService.getEffectiveWordDetectionLocationNarrative(report, expTypeForNarr,
-                methodName, componentName, type, total, locationDesc, locationNumber);
+        int contentRows = detectionContentNarrativeService.countDetectionContentTableRows(report);
+        String _bodyLoc;
+        if (contentRows > 1 && contentRowIndex == 0 && !isUtMultiRowActive()) {
+            _bodyLoc = detectionContentNarrativeService.getEffectiveWordDetectionLocationNarrative(report, expTypeForNarr,
+                    methodName, componentName, type, total, locationDesc, locationNumber);
+        } else if (contentRows > 1) {
+            _bodyLoc = detectionContentNarrativeService.buildDetectionContentNarrativeSingleRow(
+                    report, expTypeForNarr, Math.min(Math.max(0, contentRowIndex), Math.max(0, contentRows - 1)));
+        } else {
+            _bodyLoc = detectionContentNarrativeService.getEffectiveWordDetectionLocationNarrative(
+                    report, expTypeForNarr, methodName, componentName, type, total, locationDesc, locationNumber);
+        }
         String detectionLocationText = _bodyLoc.isEmpty() ? "检测部位：" : "检测部位:\n    " + _bodyLoc;
-        if (leebStandardTweaks && detectionContentNarrativeService.countDetectionContentTableRows(report) <= 1) {
-            detectionLocationText = finalizeHardnessDetectionLocationText(detectionLocationText, report, true, true);
+        if (leebStandardTweaks && contentRows <= 1) {
+            boolean appendMeasurementPointNote = LeebHardnessModeResolver.typeTextIsPipeJointWeld(type);
+            detectionLocationText = finalizeHardnessDetectionLocationText(
+                    detectionLocationText, report, true, appendMeasurementPointNote);
         }
         return detectionLocationText;
     }
@@ -1878,12 +1860,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             return buildHardnessFamilyDetectionLocationCell(report, expTypeForNarr, false);
         }
         if ("LHT".equals(code) || "LHD".equals(code)) {
-            DetectionContentDetail leebDetail = detectionContentNarrativeService.parseDetectionContentDetail(report, experimentType);
-            String leebType = leebDetail.type != null ? leebDetail.type.trim() : "";
-            if (leebType.contains("螺栓") || leebType.contains("螺帽")) {
-                return resolveBoltLeebDetectionLocation(report);
-            }
-            return buildHardnessFamilyDetectionLocationCell(report, expTypeForNarr, true);
+            return buildHardnessFamilyDetectionLocationCell(report, expTypeForNarr, true, contentRowIndex);
         }
         if ("SOD".equals(code)) {
             return buildSodStyleDetectionLocationCell(report, expTypeForNarr);
@@ -1916,8 +1893,13 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         }
         int segmentCount = reportWordSegmentCount(report, experimentType);
         if (segmentCount <= 1) {
-            String c = getConclusionTextForReport(report);
-            return c != null ? c : "";
+            try {
+                beginUtMultiRowPass(contentRowIndex, 1);
+                String c = getConclusionTextForReport(report);
+                return c != null ? c : "";
+            } finally {
+                endUtMultiRowPass();
+            }
         }
         try {
             beginUtMultiRowPass(contentRowIndex, segmentCount);
@@ -1926,7 +1908,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             }
             if ("UT".equals(experimentType.getCode())) {
                 return segmentHasDefectForNdt(report)
-                        ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                        ? formatNdtDefectPresentResultParagraph(report, contentRowIndex,
+                                NDT_DEFECT_PHRASE_DEFAULT, true)
                         : "检测结果：\n  上述检测条件下，未见可记录缺陷，评定为Ⅰ级。";
             }
             String c = getConclusionTextForReport(report);
@@ -2016,14 +1999,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         if (project != null) {
             ensureProjectReportsLoadedForWord(project);
             List<Report> ordered = getReportsInOverviewOrder(project);
+            assignOverviewReportNumbersInMemory(project, ordered);
             boolean thirdPartyBranding = usesThirdPartyBranding(project, report);
             beginBrandingPass(project, thirdPartyBranding);
             try {
-                CURRENT_REPORT_INDEX_1_BASED.set(
-                        resolveBrandingDisplayIndex1Based(project, report, ordered, thirdPartyBranding));
                 return buildOverviewWorkLineAutoForSegmentInner(report, experimentType, rowIndex, segmentCount);
             } finally {
-                CURRENT_REPORT_INDEX_1_BASED.remove();
                 clearBrandingContext();
             }
         }
@@ -2261,15 +2242,14 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         if (project != null) {
             ensureProjectReportsLoadedForWord(project);
             List<Report> ordered = getReportsInOverviewOrder(project);
+            assignOverviewReportNumbersInMemory(project, ordered);
             boolean thirdPartyBranding = usesThirdPartyBranding(project, report);
             beginBrandingPass(project, thirdPartyBranding);
             try {
-                CURRENT_REPORT_INDEX_1_BASED.set(
-                        resolveBrandingDisplayIndex1Based(project, report, ordered, thirdPartyBranding));
+                if (segmentCount > 1) {
+                    beginUtMultiRowPass(rowIndex, segmentCount);
+                }
                 try {
-                    if (segmentCount > 1) {
-                        beginUtMultiRowPass(rowIndex, segmentCount);
-                    }
                     return brandingReportNumberForDisplay(report);
                 } finally {
                     if (segmentCount > 1) {
@@ -2277,7 +2257,6 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     }
                 }
             } finally {
-                CURRENT_REPORT_INDEX_1_BASED.remove();
                 clearBrandingContext();
             }
         }
@@ -2595,6 +2574,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
      * 与螺栓里氏硬度报告 {@code generateBoltLeebHardnessReport} 结论段一致。
      */
     private String wordConclusionBoltLeeb(Report report) {
+        return wordConclusionBoltLeeb(report, currentUtDetectionContentRowIndex());
+    }
+
+    private String wordConclusionBoltLeeb(Report report, int contentRowIndex) {
         ProjectComponent compBolt = resolveComponentForReport(report);
         String componentMaterial = (compBolt != null && compBolt.getMaterial() != null && !compBolt.getMaterial().isEmpty())
                 ? compBolt.getMaterial() : getCustomField(report, "部件材质", "/");
@@ -2604,78 +2587,48 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         } catch (Exception e) {
             log.warn("Failed to get material property for bolt Leeb conclusion: {}", e.getMessage());
         }
-        String pipeRangeLeebBolt = materialProperty != null ? materialProperty.get("里氏-管件") : null;
-        String weldRangeLeebBolt = materialProperty != null ? materialProperty.get("里氏-焊缝") : null;
         String defaultLeebBolt = materialProperty != null ? materialProperty.get("里氏") : null;
 
-        boolean isBoltOrNutReport = false;
-        if (report.getReportItems() != null && !report.getReportItems().isEmpty()) {
-            ReportItem firstItemForType = report.getReportItems().get(0);
-            if (firstItemForType.getTableData() != null && !firstItemForType.getTableData().isEmpty()) {
-                try {
-                    JsonNode rows = TableDataMergeUtil.mergedRowsFromTableDataJson(firstItemForType.getTableData(), objectMapper);
-                    if (rows != null && rows.isArray()) {
-                        for (JsonNode row : rows) {
-                            String type = getJsonNodeValue(row, "类型", null);
-                            if (type != null && (type.contains("螺栓") || type.contains("螺帽"))) {
-                                isBoltOrNutReport = true;
-                                break;
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("解析螺栓里氏硬度表格数据时出错: {}", e.getMessage());
-                }
-            }
-        }
+        String boltRange = LeebHardnessModeResolver.resolveLeebBoltRange(materialProperty);
+        List<String> contentTypes = LeebHardnessModeResolver.contentRowTypes(report, objectMapper);
+        boolean multiRowMixed = contentTypes.size() > 1
+                && LeebHardnessModeResolver.detectionContentHasBoltType(report, objectMapper)
+                && LeebHardnessModeResolver.detectionContentHasNutType(report, objectMapper);
 
         String standardText;
-        if (true) {
-            String boltRange = materialProperty != null ? materialProperty.get("里氏-螺栓") : null;
-            if (boltRange == null || boltRange.isEmpty()) {
-                boltRange = pipeRangeLeebBolt != null && !pipeRangeLeebBolt.isEmpty()
-                        ? pipeRangeLeebBolt
-                        : (materialProperty != null ? materialProperty.get("里氏-钢管") : null);
-            }
-            if (boltRange == null || boltRange.isEmpty()) {
-                boltRange = defaultLeebBolt;
-            }
-            String nutRange = boltRange != null ? scaleRangeForDisplay(boltRange, 0.9) : null;
-
-            if (boltRange != null && nutRange != null) {
+        if (boltRange != null && !boltRange.isEmpty()) {
+            if (multiRowMixed) {
                 standardText = String.format(
-                        "    依据DL/T439-2023规程,%s材质螺栓里氏硬度为%s，螺帽里氏硬度为螺栓硬度的0.9倍，即%s。",
-                        componentMaterial, boltRange, nutRange);
-            } else if (boltRange != null) {
-                standardText = String.format(
-                        "    依据DL/T439-2023规程,%s材质螺栓里氏硬度为%s。",
-                        componentMaterial, boltRange);
+                        "    依据DL/T439-2023规程,%s材质螺栓里氏硬度为%s，螺帽里氏硬度为%s。",
+                        componentMaterial, boltRange, boltRange);
             } else {
-                String leebText = defaultLeebBolt != null ? defaultLeebBolt : "/";
-                standardText = String.format(
-                        "    依据DL/T439-2023规程,%s材质里氏硬度为%s。",
-                        componentMaterial, leebText);
+                ExperimentType expTypeForRow = resolveExperimentTypeForReport(report);
+                DetectionContentDetail rowDetail = detectionContentNarrativeService.parseDetectionContentDetailAtRow(
+                        report, expTypeForRow, contentRowIndex);
+                String rowType = rowDetail.type != null ? rowDetail.type.trim() : "";
+                if (LeebHardnessModeResolver.typeTextIsNut(rowType)) {
+                    standardText = String.format(
+                            "    依据DL/T439-2023规程，%s材质螺帽里氏硬度为%s。",
+                            componentMaterial, boltRange);
+                } else {
+                    standardText = String.format(
+                            "    依据DL/T439-2023规程，%s材质螺栓里氏硬度为%s。",
+                            componentMaterial, boltRange);
+                }
             }
         } else {
-            if (pipeRangeLeebBolt != null && !pipeRangeLeebBolt.isEmpty()
-                    && weldRangeLeebBolt != null && !weldRangeLeebBolt.isEmpty()) {
-                standardText = String.format(
-                        "    依据DL/T439-2023规程,%s材质里氏硬度为：管件%s，焊缝%s。",
-                        componentMaterial, pipeRangeLeebBolt, weldRangeLeebBolt);
-            } else {
-                String leebText = defaultLeebBolt != null ? defaultLeebBolt : "/";
-                standardText = String.format(
-                        "    依据DL/T439-2023规程,%s材质里氏硬度为%s。",
-                        componentMaterial, leebText);
-            }
+            String leebText = defaultLeebBolt != null ? defaultLeebBolt : "/";
+            standardText = String.format(
+                    "    依据DL/T439-2023规程,%s材质里氏硬度为%s。",
+                    componentMaterial, leebText);
         }
         List<DataComparisonService.NonComplianceRecord> nonComplianceRecords = getNonComplianceRecords(report, materialProperty);
-        String conclusionText = "检测结论:\n" + standardText + "\n    检测结果符合标准要求。";
-        if (nonComplianceRecords != null && !nonComplianceRecords.isEmpty()) {
-            String nonComplianceStr = buildNonComplianceSummaryByRange(nonComplianceRecords, false);
-            conclusionText = "检测结论:\n" + standardText + "\n    " + nonComplianceStr;
+        String prefix = standardText;
+        if (prefix.endsWith("。")) {
+            prefix = prefix.substring(0, prefix.length() - 1);
         }
-        return conclusionText;
+        String tail = buildLeebDl438NonComplianceTail(nonComplianceRecords);
+        return "检测结论:\n" + prefix + tail;
     }
 
     /**
@@ -2741,12 +2694,55 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         return "是".equals(report.getHasDefect());
     }
 
+    private static final String NDT_DEFECT_PHRASE_DEFAULT = "缺陷显示";
+    private static final String NDT_DEFECT_PHRASE_MT = "缺陷磁痕显示";
+
+    private int currentConclusionSegmentIndex() {
+        return isUtMultiRowActive() ? currentUtDetectionContentRowIndex() : 0;
+    }
+
+    private int countDefectRowsForSegment(Report report, int contentRowIndex) {
+        ExperimentType expType = resolveExperimentTypeForReport(report);
+        String code = expType != null && expType.getCode() != null
+                ? expType.getCode().trim().toUpperCase(Locale.ROOT) : "";
+        boolean supportsRecordOnlyFlag = supportsRecordOnlyFlagForCode(code);
+        if ("RT".equals(code)) {
+            JsonNode rows = getDetectionRowsForNotification(report, contentRowIndex);
+            return RtDefectRowUtil.countEffectiveDefectRows(rows, supportsRecordOnlyFlag);
+        }
+        if ("UT".equals(code) || "PAUT".equals(code)) {
+            JsonNode blockRows = getDetectionRowsForNotification(report, contentRowIndex);
+            com.fasterxml.jackson.databind.node.ObjectNode wrapper = objectMapper.createObjectNode();
+            wrapper.set("rows", blockRows != null ? blockRows : objectMapper.createArrayNode());
+            return collectUTDefectRows(wrapper).size();
+        }
+        JsonNode rows = getDetectionRowsForNotification(report, contentRowIndex);
+        return NdtDefectRowUtil.countEffectiveDefectRows(rows, supportsRecordOnlyFlag);
+    }
+
+    private String formatNdtDefectPresentResultParagraph(int defectCount, String displayPhrase, boolean withAppendixHint) {
+        String body = defectCount > 0
+                ? "被检部位存在" + defectCount + "条" + displayPhrase
+                : "被检部位存在" + displayPhrase;
+        if (withAppendixHint) {
+            body += "，详见缺陷信息";
+        }
+        return "检测结果：\n  在上述检测条件下，" + body + "。";
+    }
+
+    private String formatNdtDefectPresentResultParagraph(Report report, int contentRowIndex,
+            String displayPhrase, boolean withAppendixHint) {
+        int count = countDefectRowsForSegment(report, contentRowIndex);
+        return formatNdtDefectPresentResultParagraph(count, displayPhrase, withAppendixHint && count > 0);
+    }
+
     /**
      * 磁粉检测（实验类型 {@code MT}）Word「检测结果」用语；与磁粉单项报告缺陷/无缺陷分支一致。
      */
     private String wordConclusionMt(Report report) {
         return effectiveHasDefectForReport(report)
-                ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷磁痕显示，详见缺陷信息。"
+                ? formatNdtDefectPresentResultParagraph(report, currentConclusionSegmentIndex(),
+                        NDT_DEFECT_PHRASE_MT, true)
                 : "检测结果：\n  在上述检测条件下，被检部位未见缺陷磁痕显示，评定为Ⅰ级。";
     }
 
@@ -2755,7 +2751,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
      */
     private String wordConclusionPt(Report report) {
         return effectiveHasDefectForReport(report)
-                ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                ? formatNdtDefectPresentResultParagraph(report, currentConclusionSegmentIndex(),
+                        NDT_DEFECT_PHRASE_DEFAULT, true)
                 : "检测结果：\n  在上述检测条件下，被检部位未见缺陷显示，评定为Ⅰ级。";
     }
 
@@ -2764,7 +2761,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
      */
     private String wordConclusionRt(Report report) {
         return effectiveHasDefectForReport(report)
-                ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                ? formatNdtDefectPresentResultParagraph(report, currentConclusionSegmentIndex(),
+                        NDT_DEFECT_PHRASE_DEFAULT, true)
                 : "检测结果：\n  在上述检测条件下，被检部位未见缺陷显示，评定为Ⅰ级。";
     }
 
@@ -2774,7 +2772,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
      */
     private String wordConclusionUtDefault(Report report) {
         return segmentHasDefectForNdt(report)
-                ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                ? formatNdtDefectPresentResultParagraph(report, currentConclusionSegmentIndex(),
+                        NDT_DEFECT_PHRASE_DEFAULT, true)
                 : "检测结果：\n  在上述检测条件下，被检部位未见缺陷显示，评定合格。";
     }
 
@@ -2783,7 +2782,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
      */
     private String wordConclusionPautButtWeld(Report report) {
         return segmentHasDefectForNdt(report)
-                ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                ? formatNdtDefectPresentResultParagraph(report, currentConclusionSegmentIndex(),
+                        NDT_DEFECT_PHRASE_DEFAULT, true)
                 : "检测结果：\n  上述检测条件下，未见可记录缺陷，评定为Ⅰ级。";
     }
 
@@ -3712,7 +3712,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * 先输出全部润电样式单项（概述顺序中的润电子集，编号在子集内 001 递增），再分页输出全部第三方样式单项（第三方子集内 001 递增）。
+     * 先输出全部润电样式单项，再分页输出全部第三方样式单项。
+     * 编号由调用方在循环前 sync 写库，此处只读 report_number（华图按检测类型分别从 001 递增）。
      */
     private void appendRunDianThenThirdPartySingleReports(
             XWPFDocument document,
@@ -3722,15 +3723,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         if (!runDianReports.isEmpty()) {
             beginBrandingPass(project, false);
-            int subsetIndex = 1;
             for (Report report : runDianReports) {
-                CURRENT_REPORT_INDEX_1_BASED.set(subsetIndex);
-                try {
-                    dispatchReportGeneration(report, project, subsetIndex, document);
-                } finally {
-                    CURRENT_REPORT_INDEX_1_BASED.remove();
-                }
-                subsetIndex += reportWordSegmentCount(report, resolveExperimentTypeForReport(report));
+                dispatchReportGeneration(report, project, 1, document);
             }
         }
 
@@ -3740,15 +3734,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         if (!thirdPartyReports.isEmpty()) {
             beginBrandingPass(project, true);
-            int subsetIndex = 1;
             for (Report report : thirdPartyReports) {
-                CURRENT_REPORT_INDEX_1_BASED.set(subsetIndex);
-                try {
-                    dispatchReportGeneration(report, project, subsetIndex, document);
-                } finally {
-                    CURRENT_REPORT_INDEX_1_BASED.remove();
-                }
-                subsetIndex += reportWordSegmentCount(report, resolveExperimentTypeForReport(report));
+                dispatchReportGeneration(report, project, 1, document);
             }
         }
     }
@@ -3761,15 +3748,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             return;
         }
         beginBrandingPass(project, false);
-        int subsetIndex = 1;
         for (Report report : runDianReports) {
-            CURRENT_REPORT_INDEX_1_BASED.set(subsetIndex);
-            try {
-                dispatchReportGeneration(report, project, subsetIndex, document);
-            } finally {
-                CURRENT_REPORT_INDEX_1_BASED.remove();
-            }
-            subsetIndex += reportWordSegmentCount(report, resolveExperimentTypeForReport(report));
+            dispatchReportGeneration(report, project, 1, document);
         }
     }
 
@@ -4741,7 +4721,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row16.getCell(0), "检测人员", 1847);
         createTableCell(row16.getCell(1), getFieldValue(report, "inspector", "/"), 2667);
         createTableCell(row16.getCell(2), "检测日期", 1847);
-        createTableCell(row16.getCell(3), report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")), 2667);
+        createTableCell(row16.getCell(3), formatTestDateForReport(report), 2667);
 
         // 第17行:检测内容(cell(0)跨4列)，按字段有无条件显示
         XWPFTableRow row17 = mainTable.getRow(16);
@@ -5035,9 +5015,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row13.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row13.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row13.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row13.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         XWPFTableRow contentRow = mainTable.createRow();
@@ -5350,9 +5328,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row6.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-                ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-                : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row6.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         ExperimentType expType = report.getReportItems() != null && !report.getReportItems().isEmpty()
@@ -5524,9 +5500,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row10.getCell(1), getFieldValue(report, "inspector", "/"), 2667,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row10.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateEt = report.getTestDate() != null
-                ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-                : "/";
+        String testDateEt = formatTestDateForReport(report);
         createTableCell(row10.getCell(3), testDateEt, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
 
@@ -5674,8 +5648,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             boolean hasTableDataEt = !defectRowsEt.isEmpty();
             if ("是".equals(hasDefectEt)) {
                 resultDefaultEt = hasTableDataEt
-                        ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
-                        : "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示。";
+                        ? formatNdtDefectPresentResultParagraph(defectRowsEt.size(), NDT_DEFECT_PHRASE_DEFAULT, true)
+                        : formatNdtDefectPresentResultParagraph(0, NDT_DEFECT_PHRASE_DEFAULT, false);
             } else if ("否".equals(hasDefectEt)) {
                 resultDefaultEt = "检测结果：\n  在上述检测条件下，被检部位未见缺陷显示，评定为Ⅰ级。";
             } else {
@@ -6019,9 +5993,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row10.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row10.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row10.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row10.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -6137,9 +6109,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row11.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row11.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row11.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row11.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -6203,7 +6173,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row9.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row9.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row9.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd")) : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row9.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -6398,7 +6368,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         String resultContent = applySavedConclusionOverrideOrDefault(report,
                 segmentHasDefectForNdt(report)
-                        ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                        ? formatNdtDefectPresentResultParagraph(defectRows.size(), NDT_DEFECT_PHRASE_DEFAULT, true)
                         : "检测结果：\n  上述检测条件下，未见可记录缺陷，评定为Ⅰ级。");
         XWPFTableRow resultRow = table.createRow();
         setRowHeight(resultRow, 1604);
@@ -6555,7 +6525,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         String resultContent = applySavedConclusionOverrideOrDefault(report,
                 segmentHasDefectForNdt(report)
-                        ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                        ? formatNdtDefectPresentResultParagraph(defectRows.size(), NDT_DEFECT_PHRASE_DEFAULT, true)
                         : "检测结果：\n  在上述检测条件下，被检部位未见缺陷显示，评定合格。");
         XWPFTableRow resultRow = hasDefectTable ? table.createRow() : table.getRow(0);
         setRowHeight(resultRow, 1604);
@@ -6833,9 +6803,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row8.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row8.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row8.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row8.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -6916,7 +6884,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         addUTButtWeldInfoTable(document, report, project);
         addUTButtWeldProbeTable(document, report, project);
         addUTDetectionContentTable(document, report, project);
-        addUTButtWeldDefectAndResultAndSign(report, project, document, UT_JC07_BG01, title);
+        addUTButtWeldDefectAndResultAndSign(report, project, document, UT_JC10_BG01, title);
     }
 
     /**
@@ -7003,9 +6971,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row10.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row10.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row10.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row10.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -7090,9 +7056,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row10.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row10.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row10.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row10.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -7184,9 +7148,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row11.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row11.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row11.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row11.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -7289,9 +7251,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row9.getCell(1), getFieldValue(report, "inspector", "/"), 2667,
             ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row9.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row9.getCell(3), testDate, 2667,
             ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
@@ -7378,9 +7338,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row9.getCell(1), getFieldValue(report, "inspector", "/"), 2667,
             ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row9.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(row9.getCell(3), testDate, 2667,
             ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
@@ -7409,7 +7367,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         String sensCustom = bearingSealCustomOverride(report, "检测灵敏度");
         String sensValue = sensCustom != null ? sensCustom
                 : (journalNeck ? "ф1.2mm×6mm 平底孔反射波80%"
-                : (thinBranch ? "底波满屏80%增益10～12dB" : "底波满屏80%增益4～6dB"));
+                : (thinBranch ? "底波满屏80%增益12dB" : "底波满屏80%增益6dB"));
 
         String compCustom = bearingSealCustomOverride(report, "综合补偿");
         String compValue = compCustom != null ? compCustom : (journalNeck ? "3dB" : "0dB");
@@ -7456,7 +7414,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         }
         String body = buildDetectionNotificationConclusion(report, expType);
         if (body == null || body.trim().isEmpty()) {
-            return "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。";
+            return formatNdtDefectPresentResultParagraph(report, currentConclusionSegmentIndex(),
+                    NDT_DEFECT_PHRASE_DEFAULT, true);
         }
         String indented = body.trim().replace("\n", "\n  ");
         return "检测结果：\n  " + indented;
@@ -7718,7 +7677,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         String resultContent = applySavedConclusionOverrideOrDefault(report,
                 segmentHasDefectForNdt(report)
-                        ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                        ? formatNdtDefectPresentResultParagraph(defectRows.size(), NDT_DEFECT_PHRASE_DEFAULT, true)
                         : "检测结果：\n  上述检测条件下，未见可记录缺陷，评定为Ⅰ级。");
         XWPFTableRow resultRow = table.createRow();
         setRowHeight(resultRow, 1604);
@@ -7797,7 +7756,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         String resultContent = applySavedConclusionOverrideOrDefault(report,
                 segmentHasDefectForNdt(report)
-                        ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                        ? formatNdtDefectPresentResultParagraph(defectRows.size(), NDT_DEFECT_PHRASE_DEFAULT, true)
                         : "检测结果：\n  上述检测条件下，未见可记录缺陷，评定为Ⅰ级。");
         XWPFTableRow resultRow = table.createRow();
         setRowHeight(resultRow, 1604);
@@ -8109,9 +8068,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(rowDate.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(rowDate.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(rowDate.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDate = report.getTestDate() != null
-            ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-            : "/";
+        String testDate = formatTestDateForReport(report);
         createTableCell(rowDate.getCell(3), testDate, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
     }
 
@@ -8187,11 +8144,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             resultContent = detectionResultParagraphOverride.trim();
         } else {
             resultContent = segmentHasDefectForNdt(report)
-                    ? "检测结果：\n  在上述检测条件下，被检部位存在缺陷显示，详见缺陷信息。"
+                    ? formatNdtDefectPresentResultParagraph(defectRows.size(), NDT_DEFECT_PHRASE_DEFAULT, true)
                     : "检测结果：\n  在上述检测条件下，被检部位未见缺陷显示，评定合格。";
         }
         XWPFTableRow resultRow = hasDefectTable ? table.createRow() : table.getRow(0);
-        int resultHeightTwips = resultRowHeightTwips != null ? resultRowHeightTwips : 1604;
+        //int resultHeightTwips = resultRowHeightTwips != null ? resultRowHeightTwips : 1604;
+        int resultHeightTwips = 1604+454*2;
         setRowHeight(resultRow, resultHeightTwips);
         if (hasDefectTable) {
             createTableCell(resultRow.getCell(0), resultContent, PT_TABLE_WIDTH,
@@ -8705,7 +8663,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         addSectionTitle(document, reportIndex + ". " + report.getTitle() + "（简化版本）");
         addParagraph(document, "");
         addParagraph(document, "报告编号：" + brandingReportNumberForDisplay(report));
-        addParagraph(document, "检测日期：" + report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
+        addParagraph(document, "检测日期：" + formatTestDateForReport(report));
         addParagraph(document, "注意：此报告生成出错。");
         addParagraph(document, "");
         
@@ -8916,63 +8874,41 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             return new ArrayList<>();
         }
 
-        String tableDataJson = mergedTableDataJsonForWord(report);
-        if (tableDataJson == null) {
+        String tableDataJson = firstItem.getTableData();
+        if (tableDataJson == null || tableDataJson.isEmpty()) {
             return new ArrayList<>();
         }
 
-        // 先判断是否为螺栓/螺帽检测：表格中存在“类型”字段且包含“螺栓”或“螺帽”
-        boolean hasBoltOrNutType = false;
-        try {
-            JsonNode rows = TableDataMergeUtil.mergedRowsFromTableDataJson(firstItem.getTableData(), objectMapper);
-            if (rows != null && rows.isArray()) {
-                for (JsonNode row : rows) {
-                    String type = getJsonNodeValue(row, "类型", null);
-                    if (type != null && (type.contains("螺栓") || type.contains("螺帽"))) {
-                        hasBoltOrNutType = true;
-                        break;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("解析里氏硬度表格数据时出错: {}", e.getMessage());
-        }
-
-        if (hasBoltOrNutType) {
-            // 螺栓/螺帽：螺帽范围为螺栓范围 * 0.9
-            String boltRange = materialProperty.get("里氏-螺栓");
-            if (boltRange == null || boltRange.isEmpty()) {
-                boltRange = materialProperty.get("里氏-管件");
-                if (boltRange == null || boltRange.isEmpty()) {
-                    boltRange = materialProperty.get("里氏-钢管");
-                }
-                if (boltRange == null || boltRange.isEmpty()) {
-                    boltRange = materialProperty.get("里氏");
-                }
-            }
+        if (LeebHardnessModeResolver.isBoltOrNutMode(report, objectMapper)) {
+            String boltRange = LeebHardnessModeResolver.resolveLeebBoltRange(materialProperty);
             return dataComparisonService.compareLeebBoltAndNutRanges(
                     tableDataJson,
+                    report.getDetectionContent(),
                     boltRange,
                     "编号",
                     "平均",
-                    "类型",
-                    0.9
-            );
-        } else {
-            // 管件 / 焊缝 / 钢管逻辑（焊缝可为母材布氏推算）
-            String pipeRange = materialProperty.getOrDefault("里氏-管件", materialProperty.get("里氏"));
-            String weldRange = materialPropertyService.resolveLeebWeldRangeForComparison(materialProperty);
-            String steelPipeRange = materialProperty.get("里氏-钢管");
-
-            return dataComparisonService.compareLeebWithPipeAndWeldRanges(
-                    tableDataJson,
-                    pipeRange,
-                    weldRange,
-                    steelPipeRange,
-                    "编号",
-                    "平均"
+                    "类型"
             );
         }
+
+        String mergedJson = mergedTableDataJsonForWord(report);
+        if (mergedJson == null) {
+            return new ArrayList<>();
+        }
+
+        // 管件 / 焊缝 / 钢管逻辑（焊缝可为母材布氏推算）
+        String pipeRange = materialProperty.getOrDefault("里氏-管件", materialProperty.get("里氏"));
+        String weldRange = materialPropertyService.resolveLeebWeldRangeForComparison(materialProperty);
+        String steelPipeRange = materialProperty.get("里氏-钢管");
+
+        return dataComparisonService.compareLeebWithPipeAndWeldRanges(
+                mergedJson,
+                pipeRange,
+                weldRange,
+                steelPipeRange,
+                "编号",
+                "平均"
+        );
     }
 
     private String buildNonComplianceSummaryByRange(
@@ -9427,10 +9363,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * 格式化日期字段，如果为空则返回默认值
+     * 格式化日期字段，如果为空则返回默认值（单项 Word：yyyy.MM.dd）。
      */
     private String formatDateField(LocalDate date, String defaultValue) {
-        return date != null ? date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : defaultValue;
+        return ReportWordDateFormat.format(date, defaultValue);
+    }
+
+    /** 单项报告检测日期展示。 */
+    private String formatTestDateForReport(Report report) {
+        return formatDateField(report != null ? report.getTestDate() : null, "/");
     }
 
     /**
@@ -10787,8 +10728,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row7.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row7.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -11011,8 +10951,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row7.getCell(1), getFieldValue(report, "inspector", "/"), 2667,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null
-                ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row7.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         JsonNode visRoot;
@@ -11563,8 +11502,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row6.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row6.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -12028,8 +11966,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row16.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row16.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row16.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row16.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 缺陷信息表格（9列） ==========
@@ -12377,8 +12314,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row7.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row7.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -12795,8 +12731,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row7.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row7.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -13175,8 +13110,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row6.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row6.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -13757,8 +13691,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row6.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row6.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -14355,8 +14288,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row7.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row7.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row7.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         
@@ -14905,8 +14837,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row5.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row5.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row5.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row5.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -15440,8 +15371,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row6.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row6.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -16113,8 +16043,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row6.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row6.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 备注 ==========
@@ -16235,11 +16164,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         String _bodyLoc = detectionContentNarrativeService.getEffectiveWordDetectionLocationNarrative(report, expTypeForNarrLpt,
                 methodName, componentName, type, total, locationDesc, locationNumber);
         String detectionLocationText = _bodyLoc.isEmpty() ? "检测部位：" : "检测部位:\n    " + _bodyLoc;
+        boolean appendMeasurementPointNote = LeebHardnessModeResolver.typeTextIsPipeJointWeld(type);
         detectionLocationText = finalizeHardnessDetectionLocationText(
                 detectionLocationText,
                 report,
                 detectionContentNarrativeService.countDetectionContentTableRows(report) <= 1,
-                true
+                appendMeasurementPointNote
         );
 
         createTableCell(detectionLocationRow.getCell(0), detectionLocationText, 9028, ParagraphAlignment.LEFT, XWPFTableCell.XWPFVertAlign.TOP, 4);
@@ -16733,7 +16663,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row5.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row5.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row5.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy.MM.dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row5.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         XWPFTableRow remarksRow = mainTable.createRow();
@@ -17277,8 +17207,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row8.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row8.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row8.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row8.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 检测部位 ==========
@@ -17615,8 +17544,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         String componentMaterial = (component != null && component.getMaterial() != null && !component.getMaterial().isEmpty())
                 ? component.getMaterial()
                 : getCustomField(report, "部件材质", "/");
-        String testDateStr = report.getTestDate() != null
-                ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
 
         XWPFParagraph companyTitle = document.createParagraph();
         companyTitle.setAlignment(ParagraphAlignment.CENTER);
@@ -18076,8 +18004,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         createTableCell(row6.getCell(0), "检测人员", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(1), getFieldValue(report, "inspector", "/"), 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         createTableCell(row6.getCell(2), "检测日期", 1847, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-        String testDateStr = report.getTestDate() != null ? 
-            report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
         createTableCell(row6.getCell(3), testDateStr, 2667, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
         // ========== 5. 检测部位 ==========
@@ -19570,49 +19497,11 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
     /** 与 {@link #syncReportNumbersToOverviewOrder} 相同规则，仅改内存不写库（概述预览用）。 */
     private void assignOverviewReportNumbersInMemory(Project project, List<Report> orderedReports) {
-        if (orderedReports == null || orderedReports.isEmpty()) {
-            return;
-        }
-        String pn = project.getProjectNumber() != null ? project.getProjectNumber().trim() : "";
-
-        boolean needRunDian = false;
-        boolean needThirdParty = false;
-        for (Report r : orderedReports) {
-            if (usesThirdPartyBranding(project, r)) {
-                needThirdParty = true;
-            } else {
-                needRunDian = true;
-            }
-        }
-        if (needRunDian && pn.isEmpty() && !needThirdParty) {
-            return;
-        }
-
-        String effectiveTpBase = ThirdPartyPlaceholders.effectiveThirdPartyProjectNumberBase(
-                project.getThirdPartyProjectNumber());
-
-        int runDianSeq = 1;
-        int thirdPartySeq = 1;
-        boolean huatuPerType = ThirdPartyReportNumbering.usesPerTypeNumbering(project.getThirdPartyName());
-        Map<String, Integer> thirdPartyTypeSeq = huatuPerType ? new HashMap<>() : null;
-        for (Report report : orderedReports) {
-            if (usesThirdPartyBranding(project, report)) {
-                if (huatuPerType) {
-                    String typeCode = resolveExperimentTypeCodeForReport(report);
-                    int seq = thirdPartyTypeSeq.merge(typeCode, 1, Integer::sum);
-                    report.setReportNumber(ThirdPartyReportNumbering.formatHuatuNumber(
-                            effectiveTpBase, typeCode, seq));
-                } else {
-                    report.setReportNumber(ThirdPartyReportNumbering.formatLegacyNumber(
-                            effectiveTpBase, thirdPartySeq++));
-                }
-            } else {
-                if (pn.isEmpty()) {
-                    continue;
-                }
-                report.setReportNumber(pn + "-" + String.format("%03d", runDianSeq++));
-            }
-        }
+        ReportNumberAssignment.assign(
+                project,
+                orderedReports,
+                WordGeneratorServiceImpl::usesThirdPartyBranding,
+                this::resolveExperimentTypeCodeForReport);
     }
 
     private String buildSummaryCommissionParagraph(Project project) {
@@ -20052,10 +19941,6 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             return data;
         }
         int sequence = 0;
-        int runDianSeq = 0;
-        int thirdPartySeq = 0;
-        boolean huatuPerType = ThirdPartyReportNumbering.usesPerTypeNumbering(project.getThirdPartyName());
-        Map<String, Integer> thirdPartyTypeSeq = huatuPerType ? new HashMap<>() : null;
         for (Report report : orderedReports) {
             try {
                 String componentName = null;
@@ -20085,16 +19970,6 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                         boolean segmentHasDefect = segments > 1
                                 ? hasDefectForOverviewSegment(report, experimentType, overviewComps, row)
                                 : hasDefectForOverview(report, experimentType, overviewComps);
-                        int seq;
-                        if (thirdPartyBranding && huatuPerType) {
-                            String typeCode = resolveExperimentTypeCodeForReport(report);
-                            seq = thirdPartyTypeSeq.merge(typeCode, 1, Integer::sum);
-                        } else if (thirdPartyBranding) {
-                            seq = ++thirdPartySeq;
-                        } else {
-                            seq = ++runDianSeq;
-                        }
-                        CURRENT_REPORT_INDEX_1_BASED.set(seq);
                         beginUtMultiRowPass(row, segments);
                         try {
                             String reportNumber = brandingReportNumberForDisplay(report);
@@ -20132,13 +20007,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                         }
                     }
                 } finally {
-                    CURRENT_REPORT_INDEX_1_BASED.remove();
+                    clearBrandingContext();
                 }
             } catch (Exception e) {
                 log.warn("Error collecting data for report {}: {}", report.getId(), e.getMessage());
             }
         }
-        clearBrandingContext();
         endUtMultiRowPass();
         // 保持 orderedReports 传入顺序，确保摘要与总日志拖拽顺序一致。
         return data;
@@ -20533,8 +20407,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         String componentMaterial = (component != null && component.getMaterial() != null && !component.getMaterial().isEmpty())
                 ? component.getMaterial()
                 : getCustomField(report, "部件材质", "/");
-        String testDateStr = report.getTestDate() != null
-                ? report.getTestDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "/";
+        String testDateStr = formatTestDateForReport(report);
 
         // ========== 从 detectionContent 读取 SOD 专有字段 ==========
         String probeSpec = "/";

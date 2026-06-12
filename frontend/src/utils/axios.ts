@@ -24,14 +24,6 @@ const getApiBaseURL = () => '/api';
 /** 项目详情等 JSON 接口默认 30s 不够时用（与 Nginx proxy_read_timeout 对齐部署） */
 export const JSON_FETCH_LONG_TIMEOUT_MS = 120000;
 
-/** Word 导出/下载类路径：超时提示保留「第三方报告」等说明 */
-function isWordHeavyApiUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  return /word-export-jobs|generate-word|generate-summary-word|generate-third-party-word|detection-notification-word|batch-generate-word/i.test(
-    url,
-  );
-}
-
 function handleSessionExpired(): void {
   message.error(SESSION_EXPIRED_MESSAGE);
   localStorage.removeItem('token');
@@ -118,16 +110,7 @@ apiClient.interceptors.response.use(
       error.code === 'ECONNABORTED' ||
       (typeof error.message === 'string' && /timeout/i.test(error.message))
     ) {
-      const reqUrl = error.config?.url || '';
-      if (isWordHeavyApiUrl(reqUrl)) {
-        message.error(
-          '请求超时。第三方报告若附图很多、文件很大，生成与下载可能需十余分钟；请稍后重试，并在 Nginx 上将 proxy_read_timeout / proxy_send_timeout 调到与前端 Word 导出超时一致（参见 deploy/应用更新指南）',
-        );
-      } else {
-        message.error(
-          '请求超时。项目或报告数据量较大、或网络较慢时，加载可能较慢；请稍后重试。若经常超时，请让管理员调大接口与 Nginx proxy_read_timeout。',
-        );
-      }
+      message.error('请稍等');
     } else if (error.request) {
       message.error('网络错误，请检查您的连接');
     } else {

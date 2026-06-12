@@ -48,9 +48,11 @@ class TypeLabelUtilTest {
     @Test
     void isElbowPipeDetectionType_canonicalAndLegacy() {
         assertTrue(TypeLabelUtil.isElbowPipeDetectionType("弯头"));
+        assertTrue(TypeLabelUtil.isElbowPipeDetectionType("弯管"));
         assertTrue(TypeLabelUtil.isElbowPipeDetectionType("弯头/弯管"));
         assertTrue(TypeLabelUtil.isElbowPipeDetectionType("弯头弯管"));
         assertTrue(TypeLabelUtil.isElbowPipeDetectionType(" 弯头 "));
+        assertTrue(TypeLabelUtil.isElbowPipeDetectionType(" 弯管 "));
         assertFalse(TypeLabelUtil.isElbowPipeDetectionType("对接焊缝"));
         assertFalse(TypeLabelUtil.isElbowPipeDetectionType(null));
         assertFalse(TypeLabelUtil.isElbowPipeDetectionType(""));

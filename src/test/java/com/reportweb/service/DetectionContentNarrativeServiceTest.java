@@ -45,6 +45,20 @@ class DetectionContentNarrativeServiceTest {
     }
 
     @Test
+    void leebHardness_boltTypeWithEndWaistLocationDesc_showsSpecificPosition() {
+        ExperimentType et = new ExperimentType();
+        et.setCode("LHD");
+        et.setName("里氏硬度检测");
+        String out = service.buildDetectionDetailText(
+                "里氏硬度检测", "高压螺栓", "螺栓（检测部位：端部）",
+                "10", "端部", "A1", true, true, et, null, null);
+        assertTrue(out.contains("端部"), "端部应作为具体位置写入叙述");
+        assertTrue(out.contains("具体位置："), "应含具体位置段");
+        assertTrue(out.contains("总计数量为10"));
+        assertTrue(out.contains("编号：A1"));
+    }
+
+    @Test
     void leebHardness_boltTypeWithDetectionPart_stripsLocationQualifierOnly() {
         ExperimentType et = new ExperimentType();
         et.setCode("LHD");

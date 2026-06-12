@@ -57,6 +57,10 @@ export const projectService = {
     await apiClient.post(`/projects/${id}/approval/reject`, { track });
   },
 
+  approvalRollback: async (id: number, track: 'ndt' | 'chem'): Promise<void> => {
+    await apiClient.post(`/projects/${id}/approval/rollback`, { track });
+  },
+
   getByUserId: async (userId: string): Promise<ProjectList[]> => {
     const response = await apiClient.get<ProjectList[]>(`/projects/user/${userId}`);
     return response.data;

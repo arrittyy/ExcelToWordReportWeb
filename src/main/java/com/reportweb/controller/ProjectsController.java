@@ -144,6 +144,91 @@ public class ProjectsController {
         return project != null && matchesAnyName(project.getResponsiblePerson(), principalNames);
     }
 
+    private static boolean canRollbackApproval(Project project,
+                                              com.reportweb.entity.User currentUser,
+                                              String... principalNames) {
+        if (project == null || currentUser == null) {
+            return false;
+        }
+        if (UserRoleUtils.isSubUser(currentUser)) {
+            return false;
+        }
+        String userId = currentUser.getId();
+        if (userId != null && userId.equals(project.getUserId())) {
+            return true;
+        }
+        return isProjectResponsible(project, principalNames);
+    }
+
+    private static boolean hasApprovalPersonOrDateText(String name) {
+        return name != null && !name.trim().isEmpty();
+    }
+
+    private static boolean trackNeedsRollback(Project project, String track) {
+        if (project == null || track == null) {
+            return false;
+        }
+        if ("ndt".equals(track)) {
+            int step = project.getApprovalStepNdt() != null ? project.getApprovalStepNdt() : STEP_WRITER;
+            if (step > STEP_WRITER) {
+                return true;
+            }
+            if (project.getRejectionStepNdt() != null) {
+                return true;
+            }
+            return hasApprovalPersonOrDateText(project.getWriterNdt())
+                    || hasApprovalPersonOrDateText(project.getReviewerNdt())
+                    || hasApprovalPersonOrDateText(project.getApproverNdt())
+                    || project.getWriterDateNdt() != null
+                    || project.getReviewDateNdt() != null
+                    || project.getApprovalDateNdt() != null;
+        }
+        if ("chem".equals(track)) {
+            int step = project.getApprovalStepChem() != null ? project.getApprovalStepChem() : STEP_WRITER;
+            if (step > STEP_WRITER) {
+                return true;
+            }
+            if (project.getRejectionStepChem() != null) {
+                return true;
+            }
+            return hasApprovalPersonOrDateText(project.getWriterChem())
+                    || hasApprovalPersonOrDateText(project.getReviewerChem())
+                    || hasApprovalPersonOrDateText(project.getApproverChem())
+                    || project.getWriterDateChem() != null
+                    || project.getReviewDateChem() != null
+                    || project.getApprovalDateChem() != null;
+        }
+        return false;
+    }
+
+    private static void resetApprovalTrack(Project project, String track) {
+        if (project == null || track == null) {
+            return;
+        }
+        if ("ndt".equals(track)) {
+            project.setApprovalStepNdt(STEP_WRITER);
+            project.setRejectionStepNdt(null);
+            project.setWriterNdt(null);
+            project.setReviewerNdt(null);
+            project.setApproverNdt(null);
+            project.setWriterDateNdt(null);
+            project.setReviewDateNdt(null);
+            project.setApprovalDateNdt(null);
+        } else if ("chem".equals(track)) {
+            project.setApprovalStepChem(STEP_WRITER);
+            project.setRejectionStepChem(null);
+            project.setWriterChem(null);
+            project.setReviewerChem(null);
+            project.setApproverChem(null);
+            project.setWriterDateChem(null);
+            project.setReviewDateChem(null);
+            project.setApprovalDateChem(null);
+        }
+        if ("Completed".equals(project.getStatus())) {
+            project.setStatus(PROJECT_STATUS_IN_PROGRESS);
+        }
+    }
+
     private static boolean canSubmitAtWriterStep(Project project, String track, String... principalNames) {
         if (project == null) {
             return false;
@@ -509,6 +594,52 @@ public class ProjectsController {
         }
     }
 
+    @PostMapping("/{id}/approval/rollback")
+    @Transactional
+    public ResponseEntity<?> approvalRollback(
+            @PathVariable Integer id,
+            @RequestBody ProjectDTOs.ApprovalActionRequest body,
+            Authentication authentication) {
+        try {
+            if (body == null || body.getTrack() == null || body.getTrack().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "请指定 track: ndt 或 chem"));
+            }
+            String track = body.getTrack().toLowerCase();
+            if (!"ndt".equals(track) && !"chem".equals(track)) {
+                return ResponseEntity.badRequest().body(Map.of("message", "track 须为 ndt 或 chem"));
+            }
+            CustomUserPrincipal userPrincipal = (CustomUserPrincipal) authentication.getPrincipal();
+            com.reportweb.entity.User currentUser = userPrincipal.getUser();
+            String[] principalNames = principalNames(currentUser);
+
+            Project project = projectRepository.findById(id).orElse(null);
+            if (project == null) {
+                return ResponseEntity.notFound().build();
+            }
+            if (!canRollbackApproval(project, currentUser, principalNames)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "仅项目主账号或项目负责人可回退审批流程"));
+            }
+            if (!trackNeedsRollback(project, track)) {
+                return ResponseEntity.badRequest().body(Map.of("message", "当前轨道无需回退"));
+            }
+
+            resetApprovalTrack(project, track);
+            project.setUpdatedAt(LocalDateTime.now());
+            projectRepository.save(project);
+
+            ApprovalLog logEntry = new ApprovalLog();
+            logEntry.setProjectId(id);
+            logEntry.setTrack(track);
+            logEntry.setAction("rollback");
+            logEntry.setActorName(principalNames.length > 0 ? principalNames[0] : currentUser.getUserName());
+            approvalLogRepository.save(logEntry);
+            return ResponseEntity.noContent().build();
+        } catch (Exception ex) {
+            log.error("Error approval rollback project id: {}", id, ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "回退失败"));
+        }
+    }
+
     @GetMapping("/{id}/approval-logs")
     public ResponseEntity<List<ProjectDTOs.ApprovalLogItem>> getApprovalLogs(
             @PathVariable Integer id,
@@ -783,6 +914,8 @@ public class ProjectsController {
             }
 
             ProjectDTOs.ProjectDetail projectDetail = convertToProjectDetailDTO(project);
+            projectDetail.setCanRollbackApproval(
+                    canRollbackApproval(project, currentUser, principalNames(currentUser)));
             return ResponseEntity.ok(projectDetail);
         } catch (Exception ex) {
             log.error("Error getting project with id: {}", id, ex);
@@ -1872,6 +2005,7 @@ public class ProjectsController {
         dto.setEndDate(project.getEndDate());
         dto.setStatus(project.getStatus());
         dto.setCreatedAt(project.getCreatedAt());
+        dto.setUserId(project.getUserId());
         dto.setResponsiblePerson(project.getResponsiblePerson());
         dto.setReviewerNdt(project.getReviewerNdt());
         dto.setReviewDateNdt(project.getReviewDateNdt());
@@ -2002,6 +2136,7 @@ public class ProjectsController {
         dto.setDescription(project.getDescription());
         dto.setCreatedAt(project.getCreatedAt());
         dto.setUpdatedAt(project.getUpdatedAt());
+        dto.setUserId(project.getUserId());
         dto.setResponsiblePerson(project.getResponsiblePerson());
         dto.setReviewerNdt(project.getReviewerNdt());
         dto.setReviewDateNdt(project.getReviewDateNdt());

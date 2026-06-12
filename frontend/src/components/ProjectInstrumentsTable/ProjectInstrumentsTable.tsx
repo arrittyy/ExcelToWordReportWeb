@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Table, Button, Space, Modal, Form, Input, message, Popconfirm, Select, Checkbox, theme } from 'antd';
 import {
   PlusOutlined,
@@ -12,6 +12,7 @@ import {
   CreateInstrumentRequest,
   UpdateInstrumentRequest,
 } from '@/services/instrumentService';
+import { experimentTypeService } from '@/services/experimentTypeService';
 
 const { Option } = Select;
 
@@ -60,25 +61,6 @@ const getExperimentTypeCodeByInstrumentId = (instrumentId: number | null | undef
   return mapping[instrumentId] || null;
 };
 
-// 检测类型选项（与代码对应，用于手工选择）
-const EXPERIMENT_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'UT', label: '超声检测 (UT)' },
-  { value: 'UTM', label: '超声波测厚 (UTM)' },
-  { value: 'SOD', label: '氧化皮堆积检测 (SOD)' },
-  { value: 'PMI', label: '合金分析检测 (PMI)' },
-  { value: 'MT', label: '磁粉检测 (MT)' },
-  { value: 'VHT', label: '维氏硬度检测 (VHT)' },
-  { value: 'BHT', label: '布氏硬度检测 (BHT)' },
-  { value: 'RHT', label: '洛氏硬度检测 (RHT)' },
-  { value: 'ET', label: '涡流检测 (ET)' },
-  { value: 'VT', label: '内窥镜检测 (VT)' },
-  { value: 'RT', label: '射线检测 (RT)' },
-  { value: 'PDM', label: '管径测量 (PDM)' },
-  { value: 'PAUT', label: '相控阵超声波检测 (PAUT)' },
-  { value: 'LHT', label: '里氏硬度检测 (LHT)' },
-  { value: 'MET', label: '金相检测 (MET)' },
-];
-
 interface ProjectInstrumentsTableProps {
   projectId: number;
   onInstrumentChange?: () => void;
@@ -102,6 +84,35 @@ const ProjectInstrumentsTable: React.FC<ProjectInstrumentsTableProps> = ({ proje
     queryKey: ['instruments'],
     queryFn: () => instrumentService.getAllInstruments(),
   });
+
+  const { data: experimentTypes = [], isLoading: isLoadingExperimentTypes } = useQuery({
+    queryKey: ['experimentTypes'],
+    queryFn: () => experimentTypeService.getAll(),
+  });
+
+  const experimentTypeOptions = useMemo(
+    () =>
+      [...experimentTypes]
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+        .map((t) => ({
+          value: t.code,
+          label: `${t.name} (${t.code})`,
+        })),
+    [experimentTypes],
+  );
+
+  const experimentTypeLabelByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of experimentTypes) {
+      map.set(t.code, `${t.name} (${t.code})`);
+    }
+    return map;
+  }, [experimentTypes]);
+
+  const formatExperimentTypeCode = (code: string | undefined) => {
+    if (!code) return '-';
+    return experimentTypeLabelByCode.get(code) ?? code;
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: CreateInstrumentRequest) => instrumentService.createProjectInstrument(projectId, data),
@@ -310,8 +321,8 @@ const ProjectInstrumentsTable: React.FC<ProjectInstrumentsTableProps> = ({ proje
       title: '检测类型',
       dataIndex: 'experimentTypeCode',
       key: 'experimentTypeCode',
-      width: 120,
-      render: (value: string) => value || '-',
+      width: 180,
+      render: (value: string) => formatExperimentTypeCode(value),
     },
     {
       title: '操作',
@@ -444,13 +455,13 @@ const ProjectInstrumentsTable: React.FC<ProjectInstrumentsTableProps> = ({ proje
             label="检测类型"
             rules={[{ required: true, message: '请选择检测类型' }]}
           >
-            <Select placeholder="请选择检测类型">
-              {EXPERIMENT_TYPE_OPTIONS.map((opt) => (
-                <Option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </Option>
-              ))}
-            </Select>
+            <Select
+              placeholder="请选择检测类型"
+              loading={isLoadingExperimentTypes}
+              showSearch
+              optionFilterProp="label"
+              options={experimentTypeOptions}
+            />
           </Form.Item>
           <Form.Item name="isDefault" valuePropName="checked">
             <Checkbox>设为默认设备</Checkbox>

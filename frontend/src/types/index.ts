@@ -87,6 +87,8 @@ export interface ProjectList {
   createdAt: string;
   updatedAt: string;
   userFullName?: string;
+  /** 项目归属主账号 ID */
+  userId?: string;
   reportCount: number;
   responsiblePerson?: string;
   // 无损检测相关字段
@@ -129,6 +131,8 @@ export interface TodoItem {
 }
 
 export interface ProjectDetail extends ProjectList {
+  /** 当前用户是否可回退审批（后端计算） */
+  canRollbackApproval?: boolean;
   unitNumber?: string; // 机组编号
   summaryNotificationSignedRelPath?: string;
   summaryNotificationSignedOriginalName?: string;

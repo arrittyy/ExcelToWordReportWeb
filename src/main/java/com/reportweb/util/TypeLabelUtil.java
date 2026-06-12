@@ -99,12 +99,13 @@ public final class TypeLabelUtil {
         return t;
     }
 
-    /** 超声等模板分支：新值「弯头」与历史入库值「弯头/弯管」「弯头弯管」等价。 */
+    /** 超声等模板分支：「弯头」「弯管」为独立入库值但共用同一 UT 模板；「弯头/弯管」「弯头弯管」为历史别名。 */
     public static boolean isElbowPipeDetectionType(String type) {
         if (type == null) {
             return false;
         }
         String t = type.trim();
-        return "弯头".equals(t) || "弯头/弯管".equals(t) || "弯头弯管".equals(t);
+        return "弯头".equals(t) || "弯管".equals(t)
+                || "弯头/弯管".equals(t) || "弯头弯管".equals(t);
     }
 }
