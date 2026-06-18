@@ -25,8 +25,8 @@ interface MetallographicImageCropModalProps {
   onCancel: () => void;
 }
 
-const PREVIEW_MAX_W = 720;
-const PREVIEW_MAX_H = 520;
+const PREVIEW_MAX_W = 860;
+const PREVIEW_MAX_H = 630;
 
 const MetallographicImageCropModal: React.FC<MetallographicImageCropModalProps> = ({
   open,
@@ -66,7 +66,7 @@ const MetallographicImageCropModal: React.FC<MetallographicImageCropModalProps> 
         setNormalized(norm);
         setCropRect(cropResult.rect);
         setCropScaledDown(cropResult.scaledDown);
-        const scale = Math.min(PREVIEW_MAX_W / norm.width, PREVIEW_MAX_H / norm.height, 1);
+        const scale = Math.min(PREVIEW_MAX_W / norm.width, PREVIEW_MAX_H / norm.height);
         setPreviewScale(scale);
       })
       .catch(() => {
@@ -200,7 +200,9 @@ const MetallographicImageCropModal: React.FC<MetallographicImageCropModalProps> 
       title="金相标尺裁剪"
       open={open}
       onCancel={onCancel}
-      width={800}
+      width="min(950px, 96vw)"
+      styles={{ body: { maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } }}
+      style={{ top: 24 }}
       footer={
         <Space>
           <Button onClick={onCancel}>取消</Button>
@@ -231,7 +233,15 @@ const MetallographicImageCropModal: React.FC<MetallographicImageCropModalProps> 
         <Alert type="error" showIcon style={{ marginBottom: 12 }} message={loadError} />
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'center', overflow: 'auto', marginBottom: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          overflow: 'auto',
+          marginBottom: 16,
+          minHeight: 500,
+        }}
+      >
         <canvas
           ref={canvasRef}
           style={{

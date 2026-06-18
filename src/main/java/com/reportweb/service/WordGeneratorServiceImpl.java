@@ -335,6 +335,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         return info;
     }
 
+    /** 报告日期：无损/理化批准日期中的较晚者；仅一方有值则取该值；均无则 null */
+    private LocalDate resolveProjectReportDate(Project project) {
+        LocalDate ndt = project.getApprovalDateNdt();
+        LocalDate chem = project.getApprovalDateChem();
+        if (ndt == null) return chem;
+        if (chem == null) return ndt;
+        return ndt.isAfter(chem) ? ndt : chem;
+    }
+
     /**
      * 格式化日期为签名格式
      */
@@ -2875,13 +2884,13 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
     private String utmPointAndThicknessFromRow(JsonNode rowData) {
         if (rowData == null) {
+            return "|";
+        }
+        if (TableDataMergeUtil.isTrailingSlashPlaceholderRow(rowData)) {
             return "/|/";
         }
         String point = UltrasonicThicknessMinRequiredRules.parsePointNumber(rowData);
-        if (point.isEmpty()) {
-            point = "/";
-        }
-        String measuredStr = "/";
+        String measuredStr = "";
         String[] thicknessKeys = {"实测厚度 (mm)", "实测厚度（mm）", "实测厚度", "厚度"};
         for (String key : thicknessKeys) {
             if (!rowData.has(key)) {
@@ -2891,7 +2900,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             if (n == null || n.isNull()) {
                 continue;
             }
-            String s = n.asText().trim();
+            String s = n.isNumber() ? TableDataMergeUtil.tableDataCellDisplay(rowData, key) : n.asText().trim();
             if (!s.isEmpty() && !"/".equals(s)) {
                 measuredStr = s;
                 break;
@@ -3053,7 +3062,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         List<String> nonCompliantElbows = new ArrayList<>();
         for (int i = 0; i < mainPageRows; i++) {
             JsonNode rowData = i < totalMeasurements ? measurementRows.get(i) : null;
-            String elbowNumber = "/";
+            String elbowNumber = "";
             Double measuredValue = null;
             Double allowedValue = null;
             if (rowData != null) {
@@ -3073,7 +3082,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     }
                 }
                 if (measuredValue != null && allowedValue != null && measuredValue > allowedValue) {
-                    if (!elbowNumber.equals("/") && !elbowNumber.isEmpty()) {
+                    if (!elbowNumber.isEmpty()) {
                         nonCompliantElbows.add(elbowNumber);
                     }
                 }
@@ -3081,7 +3090,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         }
         for (int i = 0; i < totalMeasurements; i++) {
             JsonNode rowData = measurementRows.get(i);
-            String elbowNumber = "/";
+            String elbowNumber = "";
             Double measuredValue = null;
             Double allowedValue = null;
             if (rowData.has("弯头编号")) {
@@ -4857,23 +4866,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                             XWPFTableRow dataRow = defectTable.createRow();
                             setRowHeight(dataRow, 454);
                             createTableCell(dataRow.getCell(0), getDefectNumberValue(row), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(dataRow.getCell(1), getJsonValue(row, "起点位置", "/"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(dataRow.getCell(2), getJsonValue(row, "终点位置", "/"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(dataRow.getCell(3), getJsonValue(row, "长度", "/"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(dataRow.getCell(4), getJsonValue(row, "级别", "/"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(dataRow.getCell(5), getJsonValue(row, "备注", "/"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(dataRow.getCell(1), tableDataCell(row, "起点位置"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(dataRow.getCell(2), tableDataCell(row, "终点位置"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(dataRow.getCell(3), tableDataCell(row, "长度"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(dataRow.getCell(4), tableDataCell(row, "级别"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(dataRow.getCell(5), tableDataCell(row, "备注"), 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                         }
 
                         // 补齐空行至21行
                         for (int i = rowsInPage; i < 21; i++) {
                             XWPFTableRow emptyRow = defectTable.createRow();
                             setRowHeight(emptyRow, 454);
-                            createTableCell(emptyRow.getCell(0), "/", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(emptyRow.getCell(1), "/", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(emptyRow.getCell(2), "/", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(emptyRow.getCell(3), "/", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(emptyRow.getCell(4), "/", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                            createTableCell(emptyRow.getCell(5), "/", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(emptyRow.getCell(0), "", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(emptyRow.getCell(1), "", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(emptyRow.getCell(2), "", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(emptyRow.getCell(3), "", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(emptyRow.getCell(4), "", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                            createTableCell(emptyRow.getCell(5), "", 1504, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                         }
 
                         // 签批行
@@ -5063,15 +5072,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             JsonNode defectRow = i < defectRows.size() ? defectRows.get(i) : null;
             createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), PT_DEFECT_COLUMN_WIDTH,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "起点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+            createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "起点位置"), PT_DEFECT_COLUMN_WIDTH,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "终点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+            createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "终点位置"), PT_DEFECT_COLUMN_WIDTH,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "长度", "/"), PT_DEFECT_COLUMN_WIDTH,
+            createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "长度"), PT_DEFECT_COLUMN_WIDTH,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "级别", "/"), PT_DEFECT_COLUMN_WIDTH,
+            createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "级别"), PT_DEFECT_COLUMN_WIDTH,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "备注", "/"), PT_DEFECT_COLUMN_WIDTH,
+            createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "备注"), PT_DEFECT_COLUMN_WIDTH,
                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
@@ -5163,15 +5172,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "起点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "起点位置"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "终点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "终点位置"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "长度", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "长度"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "级别", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "级别"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "备注", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "备注"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
 
@@ -5179,7 +5188,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     XWPFTableRow emptyRow = table.createRow();
                     setRowHeight(emptyRow, 454);
                     for (int cellIndex = 0; cellIndex < 6; cellIndex++) {
-                        createTableCell(emptyRow.getCell(cellIndex), "/", PT_DEFECT_COLUMN_WIDTH,
+                        createTableCell(emptyRow.getCell(cellIndex), "", PT_DEFECT_COLUMN_WIDTH,
                             ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
@@ -5731,7 +5740,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     createTableCell(dataRowEt.getCell(0), getDefectNumberValue(defectRowEt), etColWidth,
                             ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     for (int c = 1; c < etDefectKeys.length; c++) {
-                        createTableCell(dataRowEt.getCell(c), getJsonValue(defectRowEt, etDefectKeys[c], "/"), etColWidth,
+                        createTableCell(dataRowEt.getCell(c), tableDataCell(defectRowEt, etDefectKeys[c]), etColWidth,
                                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
@@ -5739,7 +5748,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     XWPFTableRow emptyRowEt = appendixTable.createRow();
                     setRowHeight(emptyRowEt, 454);
                     for (int cellIndex = 0; cellIndex < 5; cellIndex++) {
-                        createTableCell(emptyRowEt.getCell(cellIndex), "/", etColWidth,
+                        createTableCell(emptyRowEt.getCell(cellIndex), "", etColWidth,
                                 ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
@@ -5799,7 +5808,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * 相控阵超声波检测报告：按 detectionContent.rows 的 type 精确值写死映射到既有 UT 结构模板，段间分页。
+     * 相控阵超声波检测报告：按 detectionContent.rows 的 type 。
      */
     private void generatePAUTReport(Report report, Project project, int reportIndex, XWPFDocument document) throws Exception {
         ExperimentType expType = report.getExperimentTypeId() != null
@@ -5856,8 +5865,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * PAUT 独立模板链（复制版）：对接焊缝结构。
-     * 当前保持与 UT 对接焊缝模板结构一致，后续可在 PAUT 方法内独立改内容。
+     * PAUT 独立模板链：对接焊缝结构。
+     * 当前保持与 UT 对接焊缝模板一致。
      */
     private void generatePautButtWeld(Report report, Project project, XWPFDocument document) throws Exception {
         addPautReportHeader(document, "对接焊缝超声波检测报告", UT_JC07_BG01);
@@ -5868,7 +5877,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * PAUT 独立模板链（复制版）：角焊缝结构。
+     * PAUT 独立模板链：角焊缝结构。
      */
     private void generatePautFilletWeld(Report report, Project project, XWPFDocument document) throws Exception {
         addPautReportHeader(document, "角焊缝超声波检测报告", UT_JC07_BG03);
@@ -6363,13 +6372,13 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode defectRow = i < defectRows.size() ? defectRows.get(i) : null;
             createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "位置", getJsonValue(defectRow, "起点位置", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "波幅(dB)", getJsonValue(defectRow, "波幅", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "深度(mm)", getJsonValue(defectRow, "深度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "长度(mm)", getJsonValue(defectRow, "长度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "高度(mm)", getJsonValue(defectRow, "高度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), getJsonValue(defectRow, "级别", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(7), getJsonValue(defectRow, "备注", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "位置", "起点位置"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "波幅(dB)", "波幅"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "深度(mm)", "深度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "长度(mm)", "长度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "高度(mm)", "高度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(defectRow, "级别"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(defectRow, "备注"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         String resultContent = applySavedConclusionOverrideOrDefault(report,
@@ -6455,19 +6464,19 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     XWPFTableRow dataRow = table.createRow();
                     setRowHeight(dataRow, 454);
                     createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "位置", getJsonValue(defectRow, "起点位置", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "波幅(dB)", getJsonValue(defectRow, "波幅", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "深度(mm)", getJsonValue(defectRow, "深度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "长度(mm)", getJsonValue(defectRow, "长度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "高度(mm)", getJsonValue(defectRow, "高度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), getJsonValue(defectRow, "级别", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(7), getJsonValue(defectRow, "备注", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "位置", "起点位置"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "波幅(dB)", "波幅"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "深度(mm)", "深度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "长度(mm)", "长度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "高度(mm)", "高度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(defectRow, "级别"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(defectRow, "备注"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 for (int i = rowsInPage; i < rowsPerPage; i++) {
                     XWPFTableRow emptyRow = table.createRow();
                     setRowHeight(emptyRow, 454);
                     for (int c = 0; c < defectCols; c++) {
-                        createTableCell(emptyRow.getCell(c), "/", colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(emptyRow.getCell(c), "", colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
                 XWPFTableRow signRow1 = table.createRow();
@@ -6521,11 +6530,11 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 setRowHeight(dataRow, 454);
                 JsonNode defectRow = i < defectRows.size() ? defectRows.get(i) : null;
                 createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "起点位置", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "终点位置", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "长度", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "级别", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "备注", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "起点位置"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "终点位置"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "长度"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "级别"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "备注"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             }
         }
 
@@ -6607,17 +6616,17 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     XWPFTableRow dataRow = table.createRow();
                     setRowHeight(dataRow, 454);
                     createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "起点位置", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "终点位置", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "长度", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "级别", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "备注", "/"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "起点位置"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "终点位置"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "长度"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "级别"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "备注"), PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 for (int i = rowsInPage; i < 21; i++) {
                     XWPFTableRow emptyRow = table.createRow();
                     setRowHeight(emptyRow, 454);
                     for (int c = 0; c < 6; c++) {
-                        createTableCell(emptyRow.getCell(c), "/", PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(emptyRow.getCell(c), "", PT_DEFECT_COLUMN_WIDTH, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
                 XWPFTableRow signRow1 = table.createRow();
@@ -7672,13 +7681,13 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode defectRow = i < defectRows.size() ? defectRows.get(i) : null;
             createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "位置", getJsonValue(defectRow, "起点位置", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "波幅(dB)", getJsonValue(defectRow, "波幅", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "深度(mm)", getJsonValue(defectRow, "深度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "长度(mm)", getJsonValue(defectRow, "长度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "高度(mm)", getJsonValue(defectRow, "高度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), getJsonValue(defectRow, "级别", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(7), getJsonValue(defectRow, "备注", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "位置", "起点位置"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "波幅(dB)", "波幅"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "深度(mm)", "深度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "长度(mm)", "长度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "高度(mm)", "高度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(defectRow, "级别"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(defectRow, "备注"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         String resultContent = applySavedConclusionOverrideOrDefault(report,
@@ -7751,13 +7760,13 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode defectRow = i < defectRows.size() ? defectRows.get(i) : null;
             createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "位置", getJsonValue(defectRow, "起点位置", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "波幅(dB)", getJsonValue(defectRow, "波幅", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "深度(mm)", getJsonValue(defectRow, "深度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "长度(mm)", getJsonValue(defectRow, "长度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "高度(mm)", getJsonValue(defectRow, "高度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), getJsonValue(defectRow, "级别", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(7), getJsonValue(defectRow, "备注", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "位置", "起点位置"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "波幅(dB)", "波幅"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "深度(mm)", "深度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "长度(mm)", "长度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "高度(mm)", "高度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(defectRow, "级别"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(defectRow, "备注"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         String resultContent = applySavedConclusionOverrideOrDefault(report,
@@ -7868,19 +7877,19 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     XWPFTableRow dataRow = table.createRow();
                     setRowHeight(dataRow, 454);
                     createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "位置", getJsonValue(defectRow, "起点位置", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "波幅(dB)", getJsonValue(defectRow, "波幅", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "深度(mm)", getJsonValue(defectRow, "深度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "长度(mm)", getJsonValue(defectRow, "长度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "高度(mm)", getJsonValue(defectRow, "高度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), getJsonValue(defectRow, "级别", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(7), getJsonValue(defectRow, "备注", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "位置", "起点位置"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "波幅(dB)", "波幅"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "深度(mm)", "深度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "长度(mm)", "长度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "高度(mm)", "高度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(defectRow, "级别"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(defectRow, "备注"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 for (int i = rowsInPage; i < rowsPerPage; i++) {
                     XWPFTableRow emptyRow = table.createRow();
                     setRowHeight(emptyRow, 454);
                     for (int c = 0; c < defectCols; c++) {
-                        createTableCell(emptyRow.getCell(c), "/", colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(emptyRow.getCell(c), "", colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
                 XWPFTableRow signRow1 = table.createRow();
@@ -7943,19 +7952,19 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     XWPFTableRow dataRow = table.createRow();
                     setRowHeight(dataRow, 454);
                     createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "位置", getJsonValue(defectRow, "起点位置", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "波幅(dB)", getJsonValue(defectRow, "波幅", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "深度(mm)", getJsonValue(defectRow, "深度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "长度(mm)", getJsonValue(defectRow, "长度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "高度(mm)", getJsonValue(defectRow, "高度", "/")), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), getJsonValue(defectRow, "级别", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(7), getJsonValue(defectRow, "备注", "/"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "位置", "起点位置"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "波幅(dB)", "波幅"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "深度(mm)", "深度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "长度(mm)", "长度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "高度(mm)", "高度"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(defectRow, "级别"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(defectRow, "备注"), colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 for (int i = rowsInPage; i < rowsPerPage; i++) {
                     XWPFTableRow emptyRow = table.createRow();
                     setRowHeight(emptyRow, 454);
                     for (int c = 0; c < defectCols; c++) {
-                        createTableCell(emptyRow.getCell(c), "/", colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(emptyRow.getCell(c), "", colWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
                 XWPFTableRow signRow1 = table.createRow();
@@ -8129,15 +8138,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 JsonNode defectRow = i < defectRows.size() ? defectRows.get(i) : null;
                 createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), PT_DEFECT_COLUMN_WIDTH,
                     ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "起点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+                createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "起点位置"), PT_DEFECT_COLUMN_WIDTH,
                     ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "终点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+                createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "终点位置"), PT_DEFECT_COLUMN_WIDTH,
                     ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "长度", "/"), PT_DEFECT_COLUMN_WIDTH,
+                createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "长度"), PT_DEFECT_COLUMN_WIDTH,
                     ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "级别", "/"), PT_DEFECT_COLUMN_WIDTH,
+                createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "级别"), PT_DEFECT_COLUMN_WIDTH,
                     ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "备注", "/"), PT_DEFECT_COLUMN_WIDTH,
+                createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "备注"), PT_DEFECT_COLUMN_WIDTH,
                     ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             }
         }
@@ -8247,22 +8256,22 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     createTableCell(dataRow.getCell(0), getDefectNumberValue(defectRow), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), getJsonValue(defectRow, "起点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(1), tableDataCell(defectRow, "起点位置"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), getJsonValue(defectRow, "终点位置", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(2), tableDataCell(defectRow, "终点位置"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), getJsonValue(defectRow, "长度", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(3), tableDataCell(defectRow, "长度"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), getJsonValue(defectRow, "级别", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(4), tableDataCell(defectRow, "级别"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), getJsonValue(defectRow, "备注", "/"), PT_DEFECT_COLUMN_WIDTH,
+                    createTableCell(dataRow.getCell(5), tableDataCell(defectRow, "备注"), PT_DEFECT_COLUMN_WIDTH,
                         ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 for (int i = rowsInPage; i < 21; i++) {
                     XWPFTableRow emptyRow = table.createRow();
                     setRowHeight(emptyRow, 454);
                     for (int c = 0; c < 6; c++) {
-                        createTableCell(emptyRow.getCell(c), "/", PT_DEFECT_COLUMN_WIDTH,
+                        createTableCell(emptyRow.getCell(c), "", PT_DEFECT_COLUMN_WIDTH,
                             ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
@@ -10869,8 +10878,13 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         return defaultValue;
     }
 
+    /** Word 检测数据表单元格（无行/缺字段→空，末尾占位行→/） */
+    private String tableDataCell(JsonNode row, String... fieldKeys) {
+        return TableDataMergeUtil.tableDataCellDisplayFirst(row, fieldKeys);
+    }
+
     private String getDefectNumberValue(JsonNode defectRow) {
-        return getJsonValue(defectRow, "编号", getJsonValue(defectRow, "序号", "/"));
+        return tableDataCell(defectRow, "编号", "序号");
     }
 
     /**
@@ -11879,41 +11893,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < resultRows.size() ? resultRows.get(i) : null;
             
-            // 获取编号
-            String number = "/";
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-            }
-             // 获取抗拉强度（尝试多个可能的列名）
-            String tensileStrength = "/";
-            if (rowData != null) {
-                if (rowData.has("抗拉强度Rm")) 
-                {
-                    tensileStrength = rowData.get("抗拉强度Rm").asText();
-                }
-            }            
-            // 获取下屈服强度或规定塑性延伸强度（尝试多个可能的列名，优先新列名）
-            String yieldStrength = "/";
-            if (rowData != null) {
-                if (rowData.has("下屈服强度或规定塑性延伸强度ReL或RP0.2")) 
-                {
-                    yieldStrength = rowData.get("下屈服强度或规定塑性延伸强度ReL或RP0.2").asText();
-                }
-            }           
-            // 获取断后伸长率（尝试多个可能的列名）
-            String elongation = "/";
-            if (rowData != null) {
-                if (rowData.has("断后伸长率A")) {
-                    elongation = rowData.get("断后伸长率A").asText();
-                } 
-            }
-            
-            createTableCell(dataRow.getCell(0), number, 1957, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), tensileStrength, 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), yieldStrength, 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), elongation, 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 1957, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "抗拉强度Rm"), 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "下屈服强度或规定塑性延伸强度ReL或RP0.2"), 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "断后伸长率A"), 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 评定标准 ==========
@@ -12042,41 +12025,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     JsonNode rowData = (i < rowsInPage) ? resultRows.get(pageStart + i) : null;
                     
-                    // 获取编号
-                    String number = "/";
-                    if (rowData != null) {
-                        if (rowData.has("编号")) {
-                            number = rowData.get("编号").asText();
-                        }
-                    }
-                    // 获取抗拉强度（尝试多个可能的列名）
-                    String tensileStrength = "/";
-                    if (rowData != null) {
-                        if (rowData.has("抗拉强度Rm")) 
-                        {
-                            tensileStrength = rowData.get("抗拉强度Rm").asText();
-                        }
-                    }            
-                    // 获取下屈服强度或规定塑性延伸强度（尝试多个可能的列名，优先新列名）
-                    String yieldStrength = "/";
-                    if (rowData != null) {
-                        if (rowData.has("下屈服强度或规定塑性延伸强度ReL或RP0.2")) 
-                        {
-                            yieldStrength = rowData.get("下屈服强度或规定塑性延伸强度ReL或RP0.2").asText();
-                        }
-                    }           
-                    // 获取断后伸长率（尝试多个可能的列名）
-                    String elongation = "/";
-                    if (rowData != null) {
-                        if (rowData.has("断后伸长率A")) {
-                            elongation = rowData.get("断后伸长率A").asText();
-                        } 
-                    }
-                    
-                    createTableCell(dataRow.getCell(0), number, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), tensileStrength, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), yieldStrength, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), elongation, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(rowData, "抗拉强度Rm"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(rowData, "下屈服强度或规定塑性延伸强度ReL或RP0.2"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(rowData, "断后伸长率A"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行 ==========
@@ -12341,15 +12293,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < defectRows.size() ? defectRows.get(i) : null;
             
-            createTableCell(dataRow.getCell(0), getJsonValue(rowData, "序号", "/"), defectColWidth1, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), getJsonValue(rowData, "焊接接头编号", "/"), defectColWidth2, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), getJsonValue(rowData, "底片编号", "/"), defectColWidth3, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), getJsonValue(rowData, "黑度", "/"), defectColWidth4, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), getJsonValue(rowData, "厚度 mm", "/"), defectColWidth5, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), getJsonValue(rowData, "识别丝号", "/"), defectColWidth6, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), getJsonValue(rowData, "缺陷位置、性质及数量", "/"), defectColWidth7, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(7), getJsonValue(rowData, "评定级别", "/"), defectColWidth8, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(8), getJsonValue(rowData, "备注", "/"), defectColWidth9, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "序号"), defectColWidth1, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "焊接接头编号"), defectColWidth2, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "底片编号"), defectColWidth3, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "黑度"), defectColWidth4, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rowData, "厚度 mm"), defectColWidth5, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rowData, "识别丝号"), defectColWidth6, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(rowData, "缺陷位置、性质及数量"), defectColWidth7, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(rowData, "评定级别"), defectColWidth8, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(8), tableDataCell(rowData, "备注"), defectColWidth9, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 6. 缺陷性质说明 ==========
@@ -12476,15 +12428,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     JsonNode rowData = (i < rowsInPage) ? defectRows.get(pageStart + i) : null;
                     
-                    createTableCell(dataRow.getCell(0), getJsonValue(rowData, "序号", "/"), defectColWidth1, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), getJsonValue(rowData, "焊接接头编号", "/"), defectColWidth2, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), getJsonValue(rowData, "底片编号", "/"), defectColWidth3, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), getJsonValue(rowData, "黑度", "/"), defectColWidth4, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), getJsonValue(rowData, "厚度 mm", "/"), defectColWidth5, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), getJsonValue(rowData, "识别丝号", "/"), defectColWidth6, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), getJsonValue(rowData, "缺陷位置、性质及数量", "/"), defectColWidth7, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(7), getJsonValue(rowData, "评定级别", "/"), defectColWidth8, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(8), getJsonValue(rowData, "备注", "/"), defectColWidth9, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(rowData, "序号"), defectColWidth1, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(rowData, "焊接接头编号"), defectColWidth2, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(rowData, "底片编号"), defectColWidth3, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(rowData, "黑度"), defectColWidth4, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(rowData, "厚度 mm"), defectColWidth5, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(rowData, "识别丝号"), defectColWidth6, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(rowData, "缺陷位置、性质及数量"), defectColWidth7, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(rowData, "评定级别"), defectColWidth8, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(8), tableDataCell(rowData, "备注"), defectColWidth9, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 缺陷性质说明 ==========
@@ -12691,49 +12643,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < resultRows.size() ? resultRows.get(i) : null;
             
-            // 获取编号
-            String number = "/";
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-            }
-            // 获取抗拉强度（优先使用新字段名）
-            String tensileStrength = "/";
-            if (rowData != null) {
-                if (rowData.has("抗拉强度")) {
-                    tensileStrength = rowData.get("抗拉强度").asText();
-                } else if (rowData.has("抗拉强度Rm")) {
-                    tensileStrength = rowData.get("抗拉强度Rm").asText();
-                }
-            }            
-            // 获取高温规定塑性延伸强度（优先使用新字段名）
-            String yieldStrength = "/";
-            if (rowData != null) {
-                if (rowData.has("高温规定塑性延伸强度")) {
-                    yieldStrength = rowData.get("高温规定塑性延伸强度").asText();
-                } else if (rowData.has("规定塑性延伸强度")) {
-                    yieldStrength = rowData.get("规定塑性延伸强度").asText();
-                } else if (rowData.has("Rp0.2")) {
-                    yieldStrength = rowData.get("Rp0.2").asText();
-                }
-            }           
-            // 获取断后伸长率（优先使用新字段名）
-            String elongation = "/";
-            if (rowData != null) {
-                if (rowData.has("断后伸长率")) {
-                    elongation = rowData.get("断后伸长率").asText();
-                } else if (rowData.has("断后伸长率A")) {
-                    elongation = rowData.get("断后伸长率A").asText();
-                } else if (rowData.has("A")) {
-                    elongation = rowData.get("A").asText();
-                }
-            }
-            
-            createTableCell(dataRow.getCell(0), number, 1957, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), tensileStrength, 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), yieldStrength, 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), elongation, 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 1957, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "抗拉强度", "抗拉强度Rm"), 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "高温规定塑性延伸强度", "规定塑性延伸强度", "Rp0.2"), 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "断后伸长率", "断后伸长率A", "A"), 2357, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 评定标准 ==========
@@ -12862,49 +12775,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     JsonNode rowData = (i < rowsInPage) ? resultRows.get(pageStart + i) : null;
                     
-                    // 获取编号
-                    String number = "/";
-                    if (rowData != null) {
-                        if (rowData.has("编号")) {
-                            number = rowData.get("编号").asText();
-                        }
-                    }
-                    // 获取抗拉强度（优先使用新字段名）
-                    String tensileStrength = "/";
-                    if (rowData != null) {
-                        if (rowData.has("抗拉强度")) {
-                            tensileStrength = rowData.get("抗拉强度").asText();
-                        } else if (rowData.has("抗拉强度Rm")) {
-                            tensileStrength = rowData.get("抗拉强度Rm").asText();
-                        }
-                    }            
-                    // 获取高温规定塑性延伸强度（优先使用新字段名）
-                    String yieldStrength = "/";
-                    if (rowData != null) {
-                        if (rowData.has("高温规定塑性延伸强度")) {
-                            yieldStrength = rowData.get("高温规定塑性延伸强度").asText();
-                        } else if (rowData.has("规定塑性延伸强度")) {
-                            yieldStrength = rowData.get("规定塑性延伸强度").asText();
-                        } else if (rowData.has("Rp0.2")) {
-                            yieldStrength = rowData.get("Rp0.2").asText();
-                        }
-                    }           
-                    // 获取断后伸长率（优先使用新字段名）
-                    String elongation = "/";
-                    if (rowData != null) {
-                        if (rowData.has("断后伸长率")) {
-                            elongation = rowData.get("断后伸长率").asText();
-                        } else if (rowData.has("断后伸长率A")) {
-                            elongation = rowData.get("断后伸长率A").asText();
-                        } else if (rowData.has("A")) {
-                            elongation = rowData.get("A").asText();
-                        }
-                    }
-                    
-                    createTableCell(dataRow.getCell(0), number, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), tensileStrength, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), yieldStrength, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), elongation, 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(rowData, "抗拉强度", "抗拉强度Rm"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(rowData, "高温规定塑性延伸强度", "规定塑性延伸强度", "Rp0.2"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(rowData, "断后伸长率", "断后伸长率A", "A"), 2257, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行 ==========
@@ -13108,37 +12982,9 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < resultRows.size() ? resultRows.get(i) : null;
             
-            // 获取编号
-            String number = "/";
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-            }
-            // 获取断裂时间（优先使用新字段名）
-            String fractureTime = "/";
-            if (rowData != null) {
-                if (rowData.has("断裂时间tu")) {
-                    fractureTime = rowData.get("断裂时间tu").asText();
-                } else if (rowData.has("断裂时间")) {
-                    fractureTime = rowData.get("断裂时间").asText();
-                }
-            }           
-            // 获取断后伸长率（优先使用新字段名）
-            String elongation = "/";
-            if (rowData != null) {
-                if (rowData.has("断后伸长率A")) {
-                    elongation = rowData.get("断后伸长率A").asText();
-                } else if (rowData.has("断后伸长率")) {
-                    elongation = rowData.get("断后伸长率").asText();
-                } else if (rowData.has("A")) {
-                    elongation = rowData.get("A").asText();
-                }
-            }
-            
-            createTableCell(dataRow.getCell(0), number, 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), fractureTime, 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), elongation, 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER,2);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "断裂时间tu", "断裂时间"), 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "断后伸长率A", "断后伸长率", "A"), 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER,2);
 
         }
 
@@ -13268,37 +13114,9 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     JsonNode rowData = (i < rowsInPage) ? resultRows.get(pageStart + i) : null;
                     
-                    // 获取编号
-                    String number = "/";
-                    if (rowData != null) {
-                        if (rowData.has("编号")) {
-                            number = rowData.get("编号").asText();
-                        }
-                    }
-                    // 获取断裂时间（优先使用新字段名）
-                    String fractureTime = "/";
-                    if (rowData != null) {
-                        if (rowData.has("断裂时间tu")) {
-                            fractureTime = rowData.get("断裂时间tu").asText();
-                        } else if (rowData.has("断裂时间")) {
-                            fractureTime = rowData.get("断裂时间").asText();
-                        }
-                    }           
-                    // 获取断后伸长率（优先使用新字段名）
-                    String elongation = "/";
-                    if (rowData != null) {
-                        if (rowData.has("断后伸长率A")) {
-                            elongation = rowData.get("断后伸长率A").asText();
-                        } else if (rowData.has("断后伸长率")) {
-                            elongation = rowData.get("断后伸长率").asText();
-                        } else if (rowData.has("A")) {
-                            elongation = rowData.get("A").asText();
-                        }
-                    }
-                    
-                    createTableCell(dataRow.getCell(0), number, 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), fractureTime, 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), elongation, 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER,2);
+                    createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(rowData, "断裂时间tu", "断裂时间"), 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(rowData, "断后伸长率A", "断后伸长率", "A"), 3009, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER,2);
                     
                 }
                 
@@ -13588,80 +13406,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < leftRows ? resultRows.get(i) : null;
             
-            // 获取数据
-            String number = "/";
-            String value1 = "/";
-            String value2 = "/";
-            String value3 = "/";
-            String average = "/";
-            
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-                if (rowData.has("1")) {
-                    JsonNode v1 = rowData.get("1");
-                    value1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rowData.has("2")) {
-                    JsonNode v2 = rowData.get("2");
-                    value2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rowData.has("3")) {
-                    JsonNode v3 = rowData.get("3");
-                    value3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rowData.has("平均")) {
-                    JsonNode avg = rowData.get("平均");
-                    average = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充左侧组（前5列）
-            createTableCell(dataRow.getCell(0), number, hardness10ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), value1, hardness10ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), value2, hardness10ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), value3, hardness10ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), average, hardness10ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), hardness10ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "1"), hardness10ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "2"), hardness10ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "3"), hardness10ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rowData, "平均"), hardness10ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             
             // 填充右侧组（后5列）- 如果左侧组还没填满，右侧组显示空数据
             int rightIndex = i + leftGroupMaxRows;
             JsonNode rightRowData = rightIndex < totalRows ? resultRows.get(rightIndex) : null;
             
-            String rightNumber = "/";
-            String rightValue1 = "/";
-            String rightValue2 = "/";
-            String rightValue3 = "/";
-            String rightAverage = "/";
-            
-            if (rightRowData != null) {
-                if (rightRowData.has("编号")) {
-                    rightNumber = rightRowData.get("编号").asText();
-                }
-                if (rightRowData.has("1")) {
-                    JsonNode v1 = rightRowData.get("1");
-                    rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rightRowData.has("2")) {
-                    JsonNode v2 = rightRowData.get("2");
-                    rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rightRowData.has("3")) {
-                    JsonNode v3 = rightRowData.get("3");
-                    rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rightRowData.has("平均")) {
-                    JsonNode avg = rightRowData.get("平均");
-                    rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充右侧组（后5列）
-            createTableCell(dataRow.getCell(5), rightNumber, hardness10ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), rightValue1, hardness10ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(7), rightValue2, hardness10ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(8), rightValue3, hardness10ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(9), rightAverage, hardness10ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rightRowData, "编号"), hardness10ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(rightRowData, "1"), hardness10ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "2"), hardness10ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "3"), hardness10ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "平均"), hardness10ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 检测结论 ==========
@@ -13801,79 +13562,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     int leftIndex = pageStartIndex + i;
                     JsonNode leftRowData = (leftIndex < totalRows) ? resultRows.get(leftIndex) : null;
                     
-                    String leftNumber = "/";
-                    String leftValue1 = "/";
-                    String leftValue2 = "/";
-                    String leftValue3 = "/";
-                    String leftAverage = "/";
-                    
-                    if (leftRowData != null) {
-                        if (leftRowData.has("编号")) {
-                            leftNumber = leftRowData.get("编号").asText();
-                        }
-                        if (leftRowData.has("1")) {
-                            JsonNode v1 = leftRowData.get("1");
-                            leftValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (leftRowData.has("2")) {
-                            JsonNode v2 = leftRowData.get("2");
-                            leftValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (leftRowData.has("3")) {
-                            JsonNode v3 = leftRowData.get("3");
-                            leftValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (leftRowData.has("平均")) {
-                            JsonNode avg = leftRowData.get("平均");
-                            leftAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充左侧组（前5列）
-                    createTableCell(dataRow.getCell(0), leftNumber, hardness10ColWApdx[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), leftValue1, hardness10ColWApdx[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), leftValue2, hardness10ColWApdx[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), leftValue3, hardness10ColWApdx[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), leftAverage, hardness10ColWApdx[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(leftRowData, "编号"), hardness10ColWApdx[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(leftRowData, "1"), hardness10ColWApdx[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(leftRowData, "2"), hardness10ColWApdx[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(leftRowData, "3"), hardness10ColWApdx[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(leftRowData, "平均"), hardness10ColWApdx[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     
                     // 右侧组数据（再填充右侧21行）
                     int rightIndex = pageStartIndex + appendixRowsPerSide + i;
                     JsonNode rightRowData = (rightIndex < totalRows) ? resultRows.get(rightIndex) : null;
                     
-                    String rightNumber = "/";
-                    String rightValue1 = "/";
-                    String rightValue2 = "/";
-                    String rightValue3 = "/";
-                    String rightAverage = "/";
-                    
-                    if (rightRowData != null) {
-                        if (rightRowData.has("编号")) {
-                            rightNumber = rightRowData.get("编号").asText();
-                        }
-                        if (rightRowData.has("1")) {
-                            JsonNode v1 = rightRowData.get("1");
-                            rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (rightRowData.has("2")) {
-                            JsonNode v2 = rightRowData.get("2");
-                            rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (rightRowData.has("3")) {
-                            JsonNode v3 = rightRowData.get("3");
-                            rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (rightRowData.has("平均")) {
-                            JsonNode avg = rightRowData.get("平均");
-                            rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充右侧组（后5列）
-                    createTableCell(dataRow.getCell(5), rightNumber, hardness10ColWApdx[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), rightValue1, hardness10ColWApdx[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(7), rightValue2, hardness10ColWApdx[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(8), rightValue3, hardness10ColWApdx[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(9), rightAverage, hardness10ColWApdx[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(rightRowData, "编号"), hardness10ColWApdx[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(rightRowData, "1"), hardness10ColWApdx[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "2"), hardness10ColWApdx[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "3"), hardness10ColWApdx[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "平均"), hardness10ColWApdx[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行（在数据行下方） ==========
@@ -14169,80 +13874,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < leftRows ? resultRows.get(i) : null;
             
-            // 获取数据
-            String number = "/";
-            String value1 = "/";
-            String value2 = "/";
-            String value3 = "/";
-            String average = "/";
-            
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-                if (rowData.has("1")) {
-                    JsonNode v1 = rowData.get("1");
-                    value1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rowData.has("2")) {
-                    JsonNode v2 = rowData.get("2");
-                    value2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rowData.has("3")) {
-                    JsonNode v3 = rowData.get("3");
-                    value3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rowData.has("平均")) {
-                    JsonNode avg = rowData.get("平均");
-                    average = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充左侧组（前5列）
-            createTableCell(dataRow.getCell(0), number, hardness10ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), value1, hardness10ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), value2, hardness10ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), value3, hardness10ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), average, hardness10ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), hardness10ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "1"), hardness10ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "2"), hardness10ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "3"), hardness10ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rowData, "平均"), hardness10ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             
             // 填充右侧组（后5列）- 如果左侧组还没填满，右侧组显示空数据
             int rightIndex = i + leftGroupMaxRows;
             JsonNode rightRowData = rightIndex < totalRows ? resultRows.get(rightIndex) : null;
             
-            String rightNumber = "/";
-            String rightValue1 = "/";
-            String rightValue2 = "/";
-            String rightValue3 = "/";
-            String rightAverage = "/";
-            
-            if (rightRowData != null) {
-                if (rightRowData.has("编号")) {
-                    rightNumber = rightRowData.get("编号").asText();
-                }
-                if (rightRowData.has("1")) {
-                    JsonNode v1 = rightRowData.get("1");
-                    rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rightRowData.has("2")) {
-                    JsonNode v2 = rightRowData.get("2");
-                    rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rightRowData.has("3")) {
-                    JsonNode v3 = rightRowData.get("3");
-                    rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rightRowData.has("平均")) {
-                    JsonNode avg = rightRowData.get("平均");
-                    rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充右侧组（后5列）
-            createTableCell(dataRow.getCell(5), rightNumber, hardness10ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), rightValue1, hardness10ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(7), rightValue2, hardness10ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(8), rightValue3, hardness10ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(9), rightAverage, hardness10ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rightRowData, "编号"), hardness10ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(rightRowData, "1"), hardness10ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "2"), hardness10ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "3"), hardness10ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "平均"), hardness10ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 检测结论 ==========
@@ -14382,79 +14030,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     int leftIndex = pageStartIndex + i;
                     JsonNode leftRowData = (leftIndex < totalRows) ? resultRows.get(leftIndex) : null;
                     
-                    String leftNumber = "/";
-                    String leftValue1 = "/";
-                    String leftValue2 = "/";
-                    String leftValue3 = "/";
-                    String leftAverage = "/";
-                    
-                    if (leftRowData != null) {
-                        if (leftRowData.has("编号")) {
-                            leftNumber = leftRowData.get("编号").asText();
-                        }
-                        if (leftRowData.has("1")) {
-                            JsonNode v1 = leftRowData.get("1");
-                            leftValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (leftRowData.has("2")) {
-                            JsonNode v2 = leftRowData.get("2");
-                            leftValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (leftRowData.has("3")) {
-                            JsonNode v3 = leftRowData.get("3");
-                            leftValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (leftRowData.has("平均")) {
-                            JsonNode avg = leftRowData.get("平均");
-                            leftAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充左侧组（前5列）
-                    createTableCell(dataRow.getCell(0), leftNumber, hardness10ColWApdx[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), leftValue1, hardness10ColWApdx[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), leftValue2, hardness10ColWApdx[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), leftValue3, hardness10ColWApdx[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), leftAverage, hardness10ColWApdx[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(leftRowData, "编号"), hardness10ColWApdx[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(leftRowData, "1"), hardness10ColWApdx[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(leftRowData, "2"), hardness10ColWApdx[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(leftRowData, "3"), hardness10ColWApdx[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(leftRowData, "平均"), hardness10ColWApdx[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     
                     // 右侧组数据（再填充右侧21行）
                     int rightIndex = pageStartIndex + appendixRowsPerSide + i;
                     JsonNode rightRowData = (rightIndex < totalRows) ? resultRows.get(rightIndex) : null;
                     
-                    String rightNumber = "/";
-                    String rightValue1 = "/";
-                    String rightValue2 = "/";
-                    String rightValue3 = "/";
-                    String rightAverage = "/";
-                    
-                    if (rightRowData != null) {
-                        if (rightRowData.has("编号")) {
-                            rightNumber = rightRowData.get("编号").asText();
-                        }
-                        if (rightRowData.has("1")) {
-                            JsonNode v1 = rightRowData.get("1");
-                            rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (rightRowData.has("2")) {
-                            JsonNode v2 = rightRowData.get("2");
-                            rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (rightRowData.has("3")) {
-                            JsonNode v3 = rightRowData.get("3");
-                            rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (rightRowData.has("平均")) {
-                            JsonNode avg = rightRowData.get("平均");
-                            rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充右侧组（后5列）
-                    createTableCell(dataRow.getCell(5), rightNumber, hardness10ColWApdx[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), rightValue1, hardness10ColWApdx[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(7), rightValue2, hardness10ColWApdx[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(8), rightValue3, hardness10ColWApdx[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(9), rightAverage, hardness10ColWApdx[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(rightRowData, "编号"), hardness10ColWApdx[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(rightRowData, "1"), hardness10ColWApdx[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "2"), hardness10ColWApdx[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "3"), hardness10ColWApdx[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "平均"), hardness10ColWApdx[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行（在数据行下方） ==========
@@ -14755,66 +14347,20 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < leftRows ? resultRows.get(i) : null;
         
-            String number = "/";
-            String value1 = "/";
-            String value2 = "/";
-            String value3 = "/";
-            
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-                if (rowData.has("1")) {
-                    JsonNode v1 = rowData.get("1");
-                    value1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rowData.has("2")) {
-                    JsonNode v2 = rowData.get("2");
-                    value2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rowData.has("3")) {
-                    JsonNode v3 = rowData.get("3");
-                    value3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-            }
-            
             // 填充左侧组
-            createTableCell(dataRow.getCell(0), number, impact8ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), value1, impact8ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), value2, impact8ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), value3, impact8ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), impact8ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "1"), impact8ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "2"), impact8ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "3"), impact8ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             
             // 填充右侧组
             int rightIndex = i + leftGroupMaxRows;
             JsonNode rightRowData = rightIndex < totalRows ? resultRows.get(rightIndex) : null;
             
-            String rightNumber = "/";
-            String rightValue1 = "/";
-            String rightValue2 = "/";
-            String rightValue3 = "/";
-            
-            if (rightRowData != null) {
-                if (rightRowData.has("编号")) {
-                    rightNumber = rightRowData.get("编号").asText();
-                }
-                if (rightRowData.has("1")) {
-                    JsonNode v1 = rightRowData.get("1");
-                    rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rightRowData.has("2")) {
-                    JsonNode v2 = rightRowData.get("2");
-                    rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rightRowData.has("3")) {
-                    JsonNode v3 = rightRowData.get("3");
-                    rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-            }
-            
-            createTableCell(dataRow.getCell(4), rightNumber, impact8ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), rightValue1, impact8ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), rightValue2, impact8ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(7), rightValue3, impact8ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rightRowData, "编号"), impact8ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rightRowData, "1"), impact8ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(rightRowData, "2"), impact8ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "3"), impact8ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 检测结论 ==========
@@ -14950,67 +14496,21 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     int leftIndex = pageStartIndex + i;
                     JsonNode leftRowData = (leftIndex < totalRows) ? resultRows.get(leftIndex) : null;
                     
-                    String leftNumber = "/";
-                    String leftValue1 = "/";
-                    String leftValue2 = "/";
-                    String leftValue3 = "/";
-                    
-                    if (leftRowData != null) {
-                        if (leftRowData.has("编号")) {
-                            leftNumber = leftRowData.get("编号").asText();
-                        }
-                        if (leftRowData.has("1")) {
-                            JsonNode v1 = leftRowData.get("1");
-                            leftValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (leftRowData.has("2")) {
-                            JsonNode v2 = leftRowData.get("2");
-                            leftValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (leftRowData.has("3")) {
-                            JsonNode v3 = leftRowData.get("3");
-                            leftValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                    }
-                    
                     // 填充左侧组（前4列）
-                    createTableCell(dataRow.getCell(0), leftNumber, impact8ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), leftValue1, impact8ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), leftValue2, impact8ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), leftValue3, impact8ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(leftRowData, "编号"), impact8ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(leftRowData, "1"), impact8ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(leftRowData, "2"), impact8ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(leftRowData, "3"), impact8ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     
                     // 右侧组数据（再填充右侧21行）
                     int rightIndex = pageStartIndex + appendixRowsPerSide + i;
                     JsonNode rightRowData = (rightIndex < totalRows) ? resultRows.get(rightIndex) : null;
                     
-                    String rightNumber = "/";
-                    String rightValue1 = "/";
-                    String rightValue2 = "/";
-                    String rightValue3 = "/";
-                    
-                    if (rightRowData != null) {
-                        if (rightRowData.has("编号")) {
-                            rightNumber = rightRowData.get("编号").asText();
-                        }
-                        if (rightRowData.has("1")) {
-                            JsonNode v1 = rightRowData.get("1");
-                            rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (rightRowData.has("2")) {
-                            JsonNode v2 = rightRowData.get("2");
-                            rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (rightRowData.has("3")) {
-                            JsonNode v3 = rightRowData.get("3");
-                            rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                    }
-                    
                     // 填充右侧组（后4列）
-                    createTableCell(dataRow.getCell(4), rightNumber, impact8ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), rightValue1, impact8ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), rightValue2, impact8ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(7), rightValue3, impact8ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(rightRowData, "编号"), impact8ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(rightRowData, "1"), impact8ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(rightRowData, "2"), impact8ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "3"), impact8ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行（在数据行下方） ==========
@@ -15260,7 +14760,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         int maxProjectDetailRows = AAT_PROJECT_DETAIL_ROWS;
         for (int i = 0; i < maxProjectDetailRows; i++) {
             XWPFTableRow projectDataRow = projectDetailTable.createRow();
-            setRowHeight(projectDataRow, 454);
+            setRowHeight(projectDataRow, 500);
             if (i < projectDetailRows.size()) {
                 // 有数据，显示数据
                 JsonNode rowData = projectDetailRows.get(i);
@@ -15349,27 +14849,18 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             XWPFTableRow dataRow = resultTable.createRow();
             setRowHeight(dataRow, 454);
             if (i < resultRows.size()) {
-                // 有数据，显示数据
                 JsonNode rowData = resultRows.get(i);
-                createTableCell(dataRow.getCell(0), getJsonNodeValue(rowData, "编号", "/"), 1800, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 1800, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 for (int j = 0; j < maxElements; j++) {
                     String elementKey = (j < elementList.size() && !elementList.get(j).isEmpty()) 
                         ? elementList.get(j) 
                         : null;
-                    String value = (elementKey != null && rowData.has(elementKey)) 
-                        ? getJsonNodeValue(rowData, elementKey, "/") 
-                        : "/";
+                    String value = elementKey != null ? tableDataCell(rowData, elementKey) : "";
                     createTableCell(dataRow.getCell(j + 1), value, resultCellWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
             } else {
-                // 数据不足，显示空行
                 for (int j = 0; j < totalCols; j++) {
-                    if (j == 0) {
-                        createTableCell(dataRow.getCell(j), "/", 1800, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    } else {
-                        createTableCell(dataRow.getCell(j), "/", resultCellWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    }
-                    
+                    createTableCell(dataRow.getCell(j), "", j == 0 ? 1800 : resultCellWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
             }
         }
@@ -15384,7 +14875,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         }
         for (String matKey : standardMaterials) {
             XWPFTableRow standardRow = resultTable.createRow();
-            setRowHeight(standardRow, 510);
+            setRowHeight(standardRow, 530);
             Map<String, String> matProp = null;
             String evalStd = evaluationStandard;
             if (matKey != null && !matKey.isEmpty() && !"/".equals(matKey)) {
@@ -15416,7 +14907,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         // ========== 9. 检测结论 ==========
         // 基准高度 2271 对应 1 行材质标准；每多一行材质标准（+510）则结论行相应减 510  
-        int conclusionRowHeight = 2271 - Math.max(0, standardMaterials.size() - 1) * 510;
+        int conclusionRowHeight = 2271 - Math.max(0, standardMaterials.size() - 1) * 510 - 368;
         XWPFTableRow conclusionRow = resultTable.createRow();
         setRowHeight(conclusionRow, conclusionRowHeight);
         
@@ -15544,22 +15035,14 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     JsonNode rowData = (i < rowsInPage) ? resultRows.get(pageStart + i) : null;
                     
-                    // 编号
-                    String number = "/";
-                    if (rowData != null && rowData.has("编号")) {
-                        number = rowData.get("编号").asText();
-                    }
-                    createTableCell(dataRow.getCell(0), number, 1800, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), 1800, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     
                     // 元素值
                     for (int j = 0; j < maxElements; j++) {
                         String elementKey = (j < elementList.size() && !elementList.get(j).isEmpty()) 
                             ? elementList.get(j) 
                             : null;
-                        String value = "/";
-                        if (rowData != null && elementKey != null && rowData.has(elementKey)) {
-                            value = getJsonNodeValue(rowData, elementKey, "/");
-                        }
+                        String value = elementKey != null ? tableDataCell(rowData, elementKey) : "";
                         createTableCell(dataRow.getCell(j + 1), value, resultCellWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
@@ -15853,104 +15336,27 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < leftRows ? resultRows.get(i) : null;
             
-            // 获取数据
-            String number = "/";
-            String value1 = "/";
-            String value2 = "/";
-            String value3 = "/";
-            String value4 = "/";
-            String value5 = "/";
-            String average = "/";
-            
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-                if (rowData.has("1")) {
-                    JsonNode v1 = rowData.get("1");
-                    value1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rowData.has("2")) {
-                    JsonNode v2 = rowData.get("2");
-                    value2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rowData.has("3")) {
-                    JsonNode v3 = rowData.get("3");
-                    value3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rowData.has("4")) {
-                    JsonNode v4 = rowData.get("4");
-                    value4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                }
-                if (rowData.has("5")) {
-                    JsonNode v5 = rowData.get("5");
-                    value5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                }
-                if (rowData.has("平均")) {
-                    JsonNode avg = rowData.get("平均");
-                    average = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充左侧组（前7列）
-            createTableCell(dataRow.getCell(0), number, hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), value1, hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), value2, hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), value3, hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), value4, hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), value5, hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), average, hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "1"), hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "2"), hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "3"), hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rowData, "4"), hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rowData, "5"), hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(rowData, "平均"), hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             
             // 填充右侧组（后7列）- 如果左侧组还没填满，右侧组显示空数据
             int rightIndex = i + leftGroupMaxRows;
             JsonNode rightRowData = rightIndex < totalRows ? resultRows.get(rightIndex) : null;
             
-            String rightNumber = "/";
-            String rightValue1 = "/";
-            String rightValue2 = "/";
-            String rightValue3 = "/";
-            String rightValue4 = "/";
-            String rightValue5 = "/";
-            String rightAverage = "/";
-            
-            if (rightRowData != null) {
-                if (rightRowData.has("编号")) {
-                    rightNumber = rightRowData.get("编号").asText();
-                }
-                if (rightRowData.has("1")) {
-                    JsonNode v1 = rightRowData.get("1");
-                    rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rightRowData.has("2")) {
-                    JsonNode v2 = rightRowData.get("2");
-                    rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rightRowData.has("3")) {
-                    JsonNode v3 = rightRowData.get("3");
-                    rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rightRowData.has("4")) {
-                    JsonNode v4 = rightRowData.get("4");
-                    rightValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                }
-                if (rightRowData.has("5")) {
-                    JsonNode v5 = rightRowData.get("5");
-                    rightValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                }
-                if (rightRowData.has("平均")) {
-                    JsonNode avg = rightRowData.get("平均");
-                    rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充右侧组（后7列）
-            createTableCell(dataRow.getCell(7), rightNumber, hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(8), rightValue1, hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(9), rightValue2, hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(10), rightValue3, hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(11), rightValue4, hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(12), rightValue5, hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(13), rightAverage, hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "编号"), hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "1"), hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "2"), hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(10), tableDataCell(rightRowData, "3"), hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(11), tableDataCell(rightRowData, "4"), hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(12), tableDataCell(rightRowData, "5"), hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(13), tableDataCell(rightRowData, "平均"), hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 检测结论 ==========
@@ -16092,103 +15498,27 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     int leftIndex = pageStartIndex + i;
                     JsonNode leftRowData = (leftIndex < totalRows) ? resultRows.get(leftIndex) : null;
                     
-                    String leftNumber = "/";
-                    String leftValue1 = "/";
-                    String leftValue2 = "/";
-                    String leftValue3 = "/";
-                    String leftValue4 = "/";
-                    String leftValue5 = "/";
-                    String leftAverage = "/";
-                    
-                    if (leftRowData != null) {
-                        if (leftRowData.has("编号")) {
-                            leftNumber = leftRowData.get("编号").asText();
-                        }
-                        if (leftRowData.has("1")) {
-                            JsonNode v1 = leftRowData.get("1");
-                            leftValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (leftRowData.has("2")) {
-                            JsonNode v2 = leftRowData.get("2");
-                            leftValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (leftRowData.has("3")) {
-                            JsonNode v3 = leftRowData.get("3");
-                            leftValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (leftRowData.has("4")) {
-                            JsonNode v4 = leftRowData.get("4");
-                            leftValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                        }
-                        if (leftRowData.has("5")) {
-                            JsonNode v5 = leftRowData.get("5");
-                            leftValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                        }
-                        if (leftRowData.has("平均")) {
-                            JsonNode avg = leftRowData.get("平均");
-                            leftAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充左侧组（前7列）
-                    createTableCell(dataRow.getCell(0), leftNumber, hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), leftValue1, hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), leftValue2, hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), leftValue3, hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), leftValue4, hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), leftValue5, hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), leftAverage, hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(leftRowData, "编号"), hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(leftRowData, "1"), hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(leftRowData, "2"), hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(leftRowData, "3"), hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(leftRowData, "4"), hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(leftRowData, "5"), hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(leftRowData, "平均"), hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     
                     // 右侧组数据（再填充右侧21行）
                     int rightIndex = pageStartIndex + appendixRowsPerSide + i;
                     JsonNode rightRowData = (rightIndex < totalRows) ? resultRows.get(rightIndex) : null;
                     
-                    String rightNumber = "/";
-                    String rightValue1 = "/";
-                    String rightValue2 = "/";
-                    String rightValue3 = "/";
-                    String rightValue4 = "/";
-                    String rightValue5 = "/";
-                    String rightAverage = "/";
-                    
-                    if (rightRowData != null) {
-                        if (rightRowData.has("编号")) {
-                            rightNumber = rightRowData.get("编号").asText();
-                        }
-                        if (rightRowData.has("1")) {
-                            JsonNode v1 = rightRowData.get("1");
-                            rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (rightRowData.has("2")) {
-                            JsonNode v2 = rightRowData.get("2");
-                            rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (rightRowData.has("3")) {
-                            JsonNode v3 = rightRowData.get("3");
-                            rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (rightRowData.has("4")) {
-                            JsonNode v4 = rightRowData.get("4");
-                            rightValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                        }
-                        if (rightRowData.has("5")) {
-                            JsonNode v5 = rightRowData.get("5");
-                            rightValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                        }
-                        if (rightRowData.has("平均")) {
-                            JsonNode avg = rightRowData.get("平均");
-                            rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充右侧组（后7列）
-                    createTableCell(dataRow.getCell(7), rightNumber, hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(8), rightValue1, hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(9), rightValue2, hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(10), rightValue3, hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(11), rightValue4, hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(12), rightValue5, hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(13), rightAverage, hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "编号"), hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "1"), hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "2"), hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(10), tableDataCell(rightRowData, "3"), hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(11), tableDataCell(rightRowData, "4"), hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(12), tableDataCell(rightRowData, "5"), hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(13), tableDataCell(rightRowData, "平均"), hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行（在数据行下方） ==========
@@ -16532,104 +15862,27 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < leftRows ? resultRows.get(i) : null;
             
-            // 获取数据
-            String number = "/";
-            String value1 = "/";
-            String value2 = "/";
-            String value3 = "/";
-            String value4 = "/";
-            String value5 = "/";
-            String average = "/";
-            
-            if (rowData != null) {
-                if (rowData.has("编号")) {
-                    number = rowData.get("编号").asText();
-                }
-                if (rowData.has("1")) {
-                    JsonNode v1 = rowData.get("1");
-                    value1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rowData.has("2")) {
-                    JsonNode v2 = rowData.get("2");
-                    value2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rowData.has("3")) {
-                    JsonNode v3 = rowData.get("3");
-                    value3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rowData.has("4")) {
-                    JsonNode v4 = rowData.get("4");
-                    value4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                }
-                if (rowData.has("5")) {
-                    JsonNode v5 = rowData.get("5");
-                    value5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                }
-                if (rowData.has("平均")) {
-                    JsonNode avg = rowData.get("平均");
-                    average = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充左侧组（前7列）
-            createTableCell(dataRow.getCell(0), number, hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), value1, hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), value2, hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), value3, hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), value4, hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), value5, hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), average, hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "1"), hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "2"), hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "3"), hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rowData, "4"), hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rowData, "5"), hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(rowData, "平均"), hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             
             // 填充右侧组（后7列）- 如果左侧组还没填满，右侧组显示空数据
             int rightIndex = i + leftGroupMaxRows;
             JsonNode rightRowData = rightIndex < totalRows ? resultRows.get(rightIndex) : null;
             
-            String rightNumber = "/";
-            String rightValue1 = "/";
-            String rightValue2 = "/";
-            String rightValue3 = "/";
-            String rightValue4 = "/";
-            String rightValue5 = "/";
-            String rightAverage = "/";
-            
-            if (rightRowData != null) {
-                if (rightRowData.has("编号")) {
-                    rightNumber = rightRowData.get("编号").asText();
-                }
-                if (rightRowData.has("1")) {
-                    JsonNode v1 = rightRowData.get("1");
-                    rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                }
-                if (rightRowData.has("2")) {
-                    JsonNode v2 = rightRowData.get("2");
-                    rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                }
-                if (rightRowData.has("3")) {
-                    JsonNode v3 = rightRowData.get("3");
-                    rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                }
-                if (rightRowData.has("4")) {
-                    JsonNode v4 = rightRowData.get("4");
-                    rightValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                }
-                if (rightRowData.has("5")) {
-                    JsonNode v5 = rightRowData.get("5");
-                    rightValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                }
-                if (rightRowData.has("平均")) {
-                    JsonNode avg = rightRowData.get("平均");
-                    rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                }
-            }
-            
             // 填充右侧组（后7列）
-            createTableCell(dataRow.getCell(7), rightNumber, hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(8), rightValue1, hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(9), rightValue2, hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(10), rightValue3, hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(11), rightValue4, hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(12), rightValue5, hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(13), rightAverage, hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "编号"), hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "1"), hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "2"), hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(10), tableDataCell(rightRowData, "3"), hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(11), tableDataCell(rightRowData, "4"), hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(12), tableDataCell(rightRowData, "5"), hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(13), tableDataCell(rightRowData, "平均"), hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 检测结论 ==========
@@ -16771,103 +16024,27 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     int leftIndex = pageStartIndex + i;
                     JsonNode leftRowData = (leftIndex < totalRows) ? resultRows.get(leftIndex) : null;
                     
-                    String leftNumber = "/";
-                    String leftValue1 = "/";
-                    String leftValue2 = "/";
-                    String leftValue3 = "/";
-                    String leftValue4 = "/";
-                    String leftValue5 = "/";
-                    String leftAverage = "/";
-                    
-                    if (leftRowData != null) {
-                        if (leftRowData.has("编号")) {
-                            leftNumber = leftRowData.get("编号").asText();
-                        }
-                        if (leftRowData.has("1")) {
-                            JsonNode v1 = leftRowData.get("1");
-                            leftValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (leftRowData.has("2")) {
-                            JsonNode v2 = leftRowData.get("2");
-                            leftValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (leftRowData.has("3")) {
-                            JsonNode v3 = leftRowData.get("3");
-                            leftValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (leftRowData.has("4")) {
-                            JsonNode v4 = leftRowData.get("4");
-                            leftValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                        }
-                        if (leftRowData.has("5")) {
-                            JsonNode v5 = leftRowData.get("5");
-                            leftValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                        }
-                        if (leftRowData.has("平均")) {
-                            JsonNode avg = leftRowData.get("平均");
-                            leftAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充左侧组（前7列）
-                    createTableCell(dataRow.getCell(0), leftNumber, hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), leftValue1, hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), leftValue2, hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), leftValue3, hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), leftValue4, hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), leftValue5, hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), leftAverage, hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(leftRowData, "编号"), hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(leftRowData, "1"), hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(leftRowData, "2"), hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(leftRowData, "3"), hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(leftRowData, "4"), hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(leftRowData, "5"), hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(leftRowData, "平均"), hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     
                     // 右侧组数据（再填充右侧21行）
                     int rightIndex = pageStartIndex + appendixRowsPerSide + i;
                     JsonNode rightRowData = (rightIndex < totalRows) ? resultRows.get(rightIndex) : null;
                     
-                    String rightNumber = "/";
-                    String rightValue1 = "/";
-                    String rightValue2 = "/";
-                    String rightValue3 = "/";
-                    String rightValue4 = "/";
-                    String rightValue5 = "/";
-                    String rightAverage = "/";
-                    
-                    if (rightRowData != null) {
-                        if (rightRowData.has("编号")) {
-                            rightNumber = rightRowData.get("编号").asText();
-                        }
-                        if (rightRowData.has("1")) {
-                            JsonNode v1 = rightRowData.get("1");
-                            rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (rightRowData.has("2")) {
-                            JsonNode v2 = rightRowData.get("2");
-                            rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (rightRowData.has("3")) {
-                            JsonNode v3 = rightRowData.get("3");
-                            rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (rightRowData.has("4")) {
-                            JsonNode v4 = rightRowData.get("4");
-                            rightValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                        }
-                        if (rightRowData.has("5")) {
-                            JsonNode v5 = rightRowData.get("5");
-                            rightValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                        }
-                        if (rightRowData.has("平均")) {
-                            JsonNode avg = rightRowData.get("平均");
-                            rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    
                     // 填充右侧组（后7列）
-                    createTableCell(dataRow.getCell(7), rightNumber, hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(8), rightValue1, hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(9), rightValue2, hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(10), rightValue3, hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(11), rightValue4, hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(12), rightValue5, hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(13), rightAverage, hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "编号"), hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "1"), hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "2"), hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(10), tableDataCell(rightRowData, "3"), hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(11), tableDataCell(rightRowData, "4"), hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(12), tableDataCell(rightRowData, "5"), hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(13), tableDataCell(rightRowData, "平均"), hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行（在数据行下方） ==========
@@ -17141,49 +16318,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             XWPFTableRow dataRow = resultTable.createRow();
             setRowHeight(dataRow, 454);
             JsonNode rowData = i < leftRows ? resultRows.get(i) : null;
-            String number = "/", value1 = "/", value2 = "/", value3 = "/", value4 = "/", value5 = "/", average = "/";
-            if (rowData != null) {
-                number = rowData.has("编号") ? rowData.get("编号").asText() : "/";
-                for (int k = 1; k <= 5; k++) {
-                    String key = String.valueOf(k);
-                    if (rowData.has(key)) {
-                        JsonNode v = rowData.get(key);
-                        String val = v.isNumber() ? String.valueOf(v.asDouble()) : v.asText();
-                        if (k == 1) value1 = val; else if (k == 2) value2 = val; else if (k == 3) value3 = val; else if (k == 4) value4 = val; else value5 = val;
-                    }
-                }
-                average = rowData.has("平均") ? (rowData.get("平均").isNumber() ? String.valueOf(rowData.get("平均").asDouble()) : rowData.get("平均").asText()) : "/";
-            }
-            createTableCell(dataRow.getCell(0), number, hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), value1, hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), value2, hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), value3, hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), value4, hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), value5, hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(6), average, hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "编号"), hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "1"), hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "2"), hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "3"), hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rowData, "4"), hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rowData, "5"), hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(6), tableDataCell(rowData, "平均"), hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
             int rightIndex = i + leftGroupMaxRows;
             JsonNode rightRowData = rightIndex < totalRows ? resultRows.get(rightIndex) : null;
-            String rn = "/", r1 = "/", r2 = "/", r3 = "/", r4 = "/", r5 = "/", ra = "/";
-            if (rightRowData != null) {
-                rn = rightRowData.has("编号") ? rightRowData.get("编号").asText() : "/";
-                for (int k = 1; k <= 5; k++) {
-                    String key = String.valueOf(k);
-                    if (rightRowData.has(key)) {
-                        JsonNode v = rightRowData.get(key);
-                        String val = v.isNumber() ? String.valueOf(v.asDouble()) : v.asText();
-                        if (k == 1) r1 = val; else if (k == 2) r2 = val; else if (k == 3) r3 = val; else if (k == 4) r4 = val; else r5 = val;
-                    }
-                }
-                ra = rightRowData.has("平均") ? (rightRowData.get("平均").isNumber() ? String.valueOf(rightRowData.get("平均").asDouble()) : rightRowData.get("平均").asText()) : "/";
-            }
-            createTableCell(dataRow.getCell(7), rn, hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(8), r1, hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(9), r2, hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(10), r3, hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(11), r4, hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(12), r5, hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(13), ra, hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "编号"), hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "1"), hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "2"), hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(10), tableDataCell(rightRowData, "3"), hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(11), tableDataCell(rightRowData, "4"), hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(12), tableDataCell(rightRowData, "5"), hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(13), tableDataCell(rightRowData, "平均"), hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         String conclusionText = getConclusionTextForReport(report);
@@ -17291,95 +16442,23 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     setRowHeight(dataRow, 454);
                     int leftIndex = pageStartIndex + i;
                     JsonNode leftRowData = (leftIndex < totalRows) ? resultRows.get(leftIndex) : null;
-                    String leftNumber = "/";
-                    String leftValue1 = "/";
-                    String leftValue2 = "/";
-                    String leftValue3 = "/";
-                    String leftValue4 = "/";
-                    String leftValue5 = "/";
-                    String leftAverage = "/";
-                    if (leftRowData != null) {
-                        if (leftRowData.has("编号")) {
-                            leftNumber = leftRowData.get("编号").asText();
-                        }
-                        if (leftRowData.has("1")) {
-                            JsonNode v1 = leftRowData.get("1");
-                            leftValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (leftRowData.has("2")) {
-                            JsonNode v2 = leftRowData.get("2");
-                            leftValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (leftRowData.has("3")) {
-                            JsonNode v3 = leftRowData.get("3");
-                            leftValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (leftRowData.has("4")) {
-                            JsonNode v4 = leftRowData.get("4");
-                            leftValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                        }
-                        if (leftRowData.has("5")) {
-                            JsonNode v5 = leftRowData.get("5");
-                            leftValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                        }
-                        if (leftRowData.has("平均")) {
-                            JsonNode avg = leftRowData.get("平均");
-                            leftAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    createTableCell(dataRow.getCell(0), leftNumber, hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), leftValue1, hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), leftValue2, hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), leftValue3, hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), leftValue4, hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), leftValue5, hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(6), leftAverage, hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(leftRowData, "编号"), hardness14ColW[0], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(leftRowData, "1"), hardness14ColW[1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(leftRowData, "2"), hardness14ColW[2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(leftRowData, "3"), hardness14ColW[3], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(leftRowData, "4"), hardness14ColW[4], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(leftRowData, "5"), hardness14ColW[5], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(6), tableDataCell(leftRowData, "平均"), hardness14ColW[6], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
 
                     int rightIndex = pageStartIndex + boltAppendixRowsPerSide + i;
                     JsonNode rightRowData = (rightIndex < totalRows) ? resultRows.get(rightIndex) : null;
-                    String rightNumber = "/";
-                    String rightValue1 = "/";
-                    String rightValue2 = "/";
-                    String rightValue3 = "/";
-                    String rightValue4 = "/";
-                    String rightValue5 = "/";
-                    String rightAverage = "/";
-                    if (rightRowData != null) {
-                        if (rightRowData.has("编号")) {
-                            rightNumber = rightRowData.get("编号").asText();
-                        }
-                        if (rightRowData.has("1")) {
-                            JsonNode v1 = rightRowData.get("1");
-                            rightValue1 = v1.isNumber() ? String.valueOf(v1.asDouble()) : v1.asText();
-                        }
-                        if (rightRowData.has("2")) {
-                            JsonNode v2 = rightRowData.get("2");
-                            rightValue2 = v2.isNumber() ? String.valueOf(v2.asDouble()) : v2.asText();
-                        }
-                        if (rightRowData.has("3")) {
-                            JsonNode v3 = rightRowData.get("3");
-                            rightValue3 = v3.isNumber() ? String.valueOf(v3.asDouble()) : v3.asText();
-                        }
-                        if (rightRowData.has("4")) {
-                            JsonNode v4 = rightRowData.get("4");
-                            rightValue4 = v4.isNumber() ? String.valueOf(v4.asDouble()) : v4.asText();
-                        }
-                        if (rightRowData.has("5")) {
-                            JsonNode v5 = rightRowData.get("5");
-                            rightValue5 = v5.isNumber() ? String.valueOf(v5.asDouble()) : v5.asText();
-                        }
-                        if (rightRowData.has("平均")) {
-                            JsonNode avg = rightRowData.get("平均");
-                            rightAverage = avg.isNumber() ? String.valueOf(avg.asDouble()) : avg.asText();
-                        }
-                    }
-                    createTableCell(dataRow.getCell(7), rightNumber, hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(8), rightValue1, hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(9), rightValue2, hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(10), rightValue3, hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(11), rightValue4, hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(12), rightValue5, hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(13), rightAverage, hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(7), tableDataCell(rightRowData, "编号"), hardness14ColW[7], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(8), tableDataCell(rightRowData, "1"), hardness14ColW[8], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(9), tableDataCell(rightRowData, "2"), hardness14ColW[9], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(10), tableDataCell(rightRowData, "3"), hardness14ColW[10], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(11), tableDataCell(rightRowData, "4"), hardness14ColW[11], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(12), tableDataCell(rightRowData, "5"), hardness14ColW[12], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(13), tableDataCell(rightRowData, "平均"), hardness14ColW[13], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
 
                 XWPFTable signTable = document.createTable(1, 4);
@@ -18044,27 +17123,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 int measurementIndex = group * mainPageRows + i;
                 JsonNode rowData = measurementIndex < totalMeasurements ? measurementRows.get(measurementIndex) : null;
 
-                String pointNumber = "/";
-                String diameter = "/";
-
-                if (rowData != null) {
-                    if (rowData.has("测点编号")) {
-                        pointNumber = rowData.get("测点编号").asText();
-                    } else if (rowData.has("编号")) {
-                        pointNumber = rowData.get("编号").asText();
-                    }
-
-                    if (rowData.has("实测管径（mm）")) {
-                        JsonNode t = rowData.get("实测管径（mm）");
-                        diameter = t.isNumber() ? String.valueOf(t.asDouble()) : t.asText();
-                    } else if (rowData.has("实测管径")) {
-                        JsonNode t = rowData.get("实测管径");
-                        diameter = t.isNumber() ? String.valueOf(t.asDouble()) : t.asText();
-                    }
-                }
-
-                createTableCell(dataRow.getCell(group * 2), pointNumber, pdm8ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(group * 2 + 1), diameter, pdm8ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(group * 2), tableDataCell(rowData, "测点编号", "编号"), pdm8ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(group * 2 + 1), tableDataCell(rowData, "实测管径（mm）", "实测管径"), pdm8ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             }
         }
 
@@ -18173,27 +17233,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                         int measurementIndex = pageStart + group * 8 + i;
                         JsonNode rowData = measurementIndex < totalMeasurements ? measurementRows.get(measurementIndex) : null;
 
-                        String pointNumber = "/";
-                        String diameter = "/";
-
-                        if (rowData != null) {
-                            if (rowData.has("测点编号")) {
-                                pointNumber = rowData.get("测点编号").asText();
-                            } else if (rowData.has("编号")) {
-                                pointNumber = rowData.get("编号").asText();
-                            }
-
-                            if (rowData.has("实测管径（mm）")) {
-                                JsonNode t = rowData.get("实测管径（mm）");
-                                diameter = t.isNumber() ? String.valueOf(t.asDouble()) : t.asText();
-                            } else if (rowData.has("实测管径")) {
-                                JsonNode t = rowData.get("实测管径");
-                                diameter = t.isNumber() ? String.valueOf(t.asDouble()) : t.asText();
-                            }
-                        }
-
-                        createTableCell(dataRow.getCell(group * 2), pointNumber, pdm8ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                        createTableCell(dataRow.getCell(group * 2 + 1), diameter, pdm8ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(dataRow.getCell(group * 2), tableDataCell(rowData, "测点编号", "编号"), pdm8ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(dataRow.getCell(group * 2 + 1), tableDataCell(rowData, "实测管径（mm）", "实测管径"), pdm8ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
 
@@ -18469,77 +17510,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             
             JsonNode rowData = i < totalMeasurements ? measurementRows.get(i) : null;
             
-            String elbowNumber = "/";
-            String nominalDiameter = "/";
-            String arcDiameter = "/";
-            String sideDiameter = "/";
-            String measuredRoundness = "/";
-            String allowedRoundness = "/";
-            Double measuredValue = null;
-            Double allowedValue = null;
-            
-            if (rowData != null) {
-                // 提取弯头编号
-                if (rowData.has("弯头编号")) {
-                    elbowNumber = rowData.get("弯头编号").asText();
-                }
-                
-                // 提取公称直径
-                if (rowData.has("公称直径 (mm)")) {
-                    JsonNode d = rowData.get("公称直径 (mm)");
-                    nominalDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                } else if (rowData.has("公称直径")) {
-                    JsonNode d = rowData.get("公称直径");
-                    nominalDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                }
-                
-                // 提取弧面直径
-                if (rowData.has("弧面直径 (mm)")) {
-                    JsonNode d = rowData.get("弧面直径 (mm)");
-                    arcDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                } else if (rowData.has("弧面直径")) {
-                    JsonNode d = rowData.get("弧面直径");
-                    arcDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                }
-                
-                // 提取侧面直径
-                if (rowData.has("侧面直径 (mm)")) {
-                    JsonNode d = rowData.get("侧面直径 (mm)");
-                    sideDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                } else if (rowData.has("侧面直径")) {
-                    JsonNode d = rowData.get("侧面直径");
-                    sideDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                }
-                
-                // 提取测量圆度值
-                if (rowData.has("测量圆度值")) {
-                    JsonNode r = rowData.get("测量圆度值");
-                    if (r.isNumber()) {
-                        measuredValue = r.asDouble();
-                        measuredRoundness = String.valueOf(measuredValue);
-                    } else {
-                        measuredRoundness = r.asText();
-                    }
-                }
-                
-                // 提取允许圆度值
-                if (rowData.has("允许圆度值")) {
-                    JsonNode r = rowData.get("允许圆度值");
-                    if (r.isNumber()) {
-                        allowedValue = r.asDouble();
-                        allowedRoundness = String.valueOf(allowedValue);
-                    } else {
-                        allowedRoundness = r.asText();
-                    }
-                }
-            }
-            
-            createTableCell(dataRow.getCell(0), elbowNumber, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(1), nominalDiameter, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(2), arcDiameter, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(3), sideDiameter, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(4), measuredRoundness, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-            createTableCell(dataRow.getCell(5), allowedRoundness, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(0), tableDataCell(rowData, "弯头编号"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(1), tableDataCell(rowData, "公称直径 (mm)", "公称直径"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(2), tableDataCell(rowData, "弧面直径 (mm)", "弧面直径"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(3), tableDataCell(rowData, "侧面直径 (mm)", "侧面直径"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(4), tableDataCell(rowData, "测量圆度值"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+            createTableCell(dataRow.getCell(5), tableDataCell(rowData, "允许圆度值"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
         }
 
         // ========== 7. 检测结果（与 wordConclusionRdm / getConclusionTextForReport 一致）==========
@@ -18661,65 +17637,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     int measurementIndex = pageStart + i;
                     JsonNode rowData = measurementIndex < totalMeasurements ? measurementRows.get(measurementIndex) : null;
                     
-                    String elbowNumber = "/";
-                    String nominalDiameter = "/";
-                    String arcDiameter = "/";
-                    String sideDiameter = "/";
-                    String measuredRoundness = "/";
-                    String allowedRoundness = "/";
-                    
-                    if (rowData != null) {
-                        // 提取弯头编号
-                        if (rowData.has("弯头编号")) {
-                            elbowNumber = rowData.get("弯头编号").asText();
-                        }
-                        
-                        // 提取公称直径
-                        if (rowData.has("公称直径 (mm)")) {
-                            JsonNode d = rowData.get("公称直径 (mm)");
-                            nominalDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                        } else if (rowData.has("公称直径")) {
-                            JsonNode d = rowData.get("公称直径");
-                            nominalDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                        }
-                        
-                        // 提取弧面直径
-                        if (rowData.has("弧面直径 (mm)")) {
-                            JsonNode d = rowData.get("弧面直径 (mm)");
-                            arcDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                        } else if (rowData.has("弧面直径")) {
-                            JsonNode d = rowData.get("弧面直径");
-                            arcDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                        }
-                        
-                        // 提取侧面直径
-                        if (rowData.has("侧面直径 (mm)")) {
-                            JsonNode d = rowData.get("侧面直径 (mm)");
-                            sideDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                        } else if (rowData.has("侧面直径")) {
-                            JsonNode d = rowData.get("侧面直径");
-                            sideDiameter = d.isNumber() ? String.valueOf(d.asDouble()) : d.asText();
-                        }
-                        
-                        // 提取测量圆度值
-                        if (rowData.has("测量圆度值")) {
-                            JsonNode r = rowData.get("测量圆度值");
-                            measuredRoundness = r.isNumber() ? String.valueOf(r.asDouble()) : r.asText();
-                        }
-                        
-                        // 提取允许圆度值
-                        if (rowData.has("允许圆度值")) {
-                            JsonNode r = rowData.get("允许圆度值");
-                            allowedRoundness = r.isNumber() ? String.valueOf(r.asDouble()) : r.asText();
-                        }
-                    }
-                    
-                    createTableCell(dataRow.getCell(0), elbowNumber, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(1), nominalDiameter, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(2), arcDiameter, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(3), sideDiameter, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(4), measuredRoundness, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                    createTableCell(dataRow.getCell(5), allowedRoundness, measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(0), tableDataCell(rowData, "弯头编号"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(1), tableDataCell(rowData, "公称直径 (mm)", "公称直径"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(2), tableDataCell(rowData, "弧面直径 (mm)", "弧面直径"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(3), tableDataCell(rowData, "侧面直径 (mm)", "侧面直径"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(4), tableDataCell(rowData, "测量圆度值"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                    createTableCell(dataRow.getCell(5), tableDataCell(rowData, "允许圆度值"), measurementColWidth, ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                 }
                 
                 // ========== 签批行 ==========
@@ -19180,9 +18103,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             projectNameRun2.setText("          " + (project.getProjectName() != null ? project.getProjectName() : ""));
             
             // ========== 3. 报告详情字段 =========
-            // 报告日期：优先使用无损检测编写日期，如果没有则使用理化检测编写日期
-            LocalDate reportDate = project.getWriterDateNdt() != null ? project.getWriterDateNdt() : 
-                                  (project.getWriterDateChem() != null ? project.getWriterDateChem() : null);
+            // 报告日期：无损/理化批准日期中的较晚者
+            LocalDate reportDate = resolveProjectReportDate(project);
             String reportDateStr = reportDate != null ? 
                 formatChineseDateFull(reportDate): "";
             addInfoField(document, "报告日期: ", reportDateStr);
@@ -20928,16 +19850,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             for (int group = 0; group < SOD_GROUPS; group++) {
                 int measurementIndex = group * SOD_ROWS_PER_GROUP + i;
                 JsonNode rowData = measurementIndex < totalMeasurements ? measurementRows.get(measurementIndex) : null;
-                String number = "/";
-                String accumulation = "/";
-                if (rowData != null) {
-                    if (rowData.has("编号")) number = rowData.get("编号").asText();
-                    JsonNode accNode = rowData.has("堆积量（％）") ? rowData.get("堆积量（％）") :
-                                      rowData.has("堆积量") ? rowData.get("堆积量") : null;
-                    if (accNode != null) accumulation = accNode.isNumber() ? String.valueOf(accNode.asDouble()) : accNode.asText();
-                }
-                createTableCell(dataRow.getCell(group * 2), number, sodAppendix6ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                createTableCell(dataRow.getCell(group * 2 + 1), accumulation, sodAppendix6ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(group * 2), tableDataCell(rowData, "编号"), sodAppendix6ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                createTableCell(dataRow.getCell(group * 2 + 1), tableDataCell(rowData, "堆积量（％）", "堆积量"), sodAppendix6ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
             }
         }
 
@@ -21031,16 +19945,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     for (int group = 0; group < SOD_GROUPS; group++) {
                         int measurementIndex = pageStart + group * SOD_APPENDIX_ROWS_PER_GROUP + i;
                         JsonNode rowData = measurementIndex < totalMeasurements ? measurementRows.get(measurementIndex) : null;
-                        String number = "/";
-                        String accumulation = "/";
-                        if (rowData != null) {
-                            if (rowData.has("编号")) number = rowData.get("编号").asText();
-                            JsonNode accNode = rowData.has("堆积量（％）") ? rowData.get("堆积量（％）") :
-                                              rowData.has("堆积量") ? rowData.get("堆积量") : null;
-                            if (accNode != null) accumulation = accNode.isNumber() ? String.valueOf(accNode.asDouble()) : accNode.asText();
-                        }
-                        createTableCell(dataRow.getCell(group * 2), number, sodAppendix6ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
-                        createTableCell(dataRow.getCell(group * 2 + 1), accumulation, sodAppendix6ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(dataRow.getCell(group * 2), tableDataCell(rowData, "编号"), sodAppendix6ColW[group * 2], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
+                        createTableCell(dataRow.getCell(group * 2 + 1), tableDataCell(rowData, "堆积量（％）", "堆积量"), sodAppendix6ColW[group * 2 + 1], ParagraphAlignment.CENTER, XWPFTableCell.XWPFVertAlign.CENTER);
                     }
                 }
 

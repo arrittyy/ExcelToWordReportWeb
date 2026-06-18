@@ -1527,6 +1527,7 @@ const ProjectDetailPage: React.FC = () => {
   const [instruments, setInstruments] = useState<ProjectInstrument[]>([]);
   const [selectedReportIds, setSelectedReportIds] = useState<number[]>([]);
   const [batchOperationLoading, setBatchOperationLoading] = useState(false);
+  const [deleteTypeLoading, setDeleteTypeLoading] = useState(false);
   const [reportSearchKeyword, setReportSearchKeyword] = useState('');
   const [showTodayCreatedReportsOnly, setShowTodayCreatedReportsOnly] = useState(false);
   const [reportFiguresModalOpen, setReportFiguresModalOpen] = useState(false);
@@ -2946,6 +2947,98 @@ const ProjectDetailPage: React.FC = () => {
     setCurrentActiveType(typeId);
     setSelectedReportIds([]);
     setReportSearchKeyword('');
+  };
+
+  const currentActiveExperimentType = useMemo(
+    () => activeExperimentTypes.find((t) => t.id === currentActiveType) ?? null,
+    [activeExperimentTypes, currentActiveType],
+  );
+
+  const currentTypeReportCount = currentActiveType != null
+    ? (reportRows[currentActiveType] ?? []).length
+    : 0;
+
+  const handleDeleteExperimentType = async () => {
+    if (!currentActiveType || !project || !id) return;
+
+    if (isProjectTypeMissing) {
+      message.warning('请先到“编辑项目”页面设置项目类型');
+      return;
+    }
+
+    const typeId = currentActiveType;
+    const typeName = currentActiveExperimentType?.name ?? '该';
+    const originalActiveTypes = activeExperimentTypes;
+    const originalCurrentType = currentActiveType;
+    const originalReportRows = reportRows;
+
+    setDeleteTypeLoading(true);
+    try {
+      const rows = reportRows[typeId] ?? [];
+      const savedIds = rows
+        .filter((r) => r.id != null && !r.isNew)
+        .map((r) => r.id as number);
+      if (savedIds.length > 0) {
+        await reportService.batchDelete(savedIds);
+      }
+
+      const newActiveTypes = activeExperimentTypes.filter((t) => t.id !== typeId);
+      const nextThirdParty = { ...(project.thirdPartyApprovalByExperimentType ?? {}) };
+      delete nextThirdParty[String(typeId)];
+
+      await projectService.update(Number(id), {
+        projectNumber: project.projectNumber,
+        projectName: project.projectName,
+        projectType: project.projectType?.trim() || '',
+        customer: project.customer,
+        customerContact: project.customerContact,
+        powerPlantId: project.powerPlantId,
+        unitId: project.unitId,
+        startDate: project.startDate,
+        endDate: project.endDate ?? undefined,
+        description: project.description,
+        responsiblePerson: project.responsiblePerson,
+        staff: project.staff,
+        status: project.status,
+        selectedExperimentTypeIds: newActiveTypes.map((t) => t.id),
+        writerNdt: project.writerNdt,
+        writerDateNdt: project.writerDateNdt,
+        reviewerNdt: project.reviewerNdt,
+        reviewDateNdt: project.reviewDateNdt,
+        approverNdt: project.approverNdt,
+        approvalDateNdt: project.approvalDateNdt,
+        writerChem: project.writerChem,
+        writerDateChem: project.writerDateChem,
+        reviewerChem: project.reviewerChem,
+        reviewDateChem: project.reviewDateChem,
+        approverChem: project.approverChem,
+        approvalDateChem: project.approvalDateChem,
+        ndtSignatureLevels: project.ndtSignatureLevels,
+        thirdPartyApprovalByExperimentType: nextThirdParty,
+      });
+
+      setActiveExperimentTypes(newActiveTypes);
+      setReportRows((prev) => {
+        const next = { ...prev };
+        delete next[typeId];
+        return next;
+      });
+      setSelectedReportIds([]);
+      setCurrentActiveType(newActiveTypes.length > 0 ? newActiveTypes[0].id : null);
+
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      queryClient.invalidateQueries({ queryKey: ['projectReports', id] });
+      invalidateReportChangeLogQueries();
+      message.success(`已删除${typeName}检测类型`);
+    } catch (error) {
+      console.error('删除检测类型失败:', error);
+      setActiveExperimentTypes(originalActiveTypes);
+      setCurrentActiveType(originalCurrentType);
+      setReportRows(originalReportRows);
+      message.error(await getApiErrorMessage(error, '删除检测类型失败'));
+    } finally {
+      setDeleteTypeLoading(false);
+    }
   };
 
   const handleSortReportsByComponentOrder = useCallback(() => {
@@ -5130,6 +5223,29 @@ const ProjectDetailPage: React.FC = () => {
           >
             添加检测类型
           </Button>
+          <Popconfirm
+            title="删除检测类型"
+            description={
+              currentActiveExperimentType
+                ? currentTypeReportCount > 0
+                  ? `确定要删除「${currentActiveExperimentType.name}」吗？该类型下的 ${currentTypeReportCount} 条报告将一并删除。`
+                  : `确定要删除「${currentActiveExperimentType.name}」吗？`
+                : '请先选择要删除的检测类型'
+            }
+            onConfirm={() => void handleDeleteExperimentType()}
+            okText="确定"
+            cancelText="取消"
+            disabled={!currentActiveType || activeExperimentTypes.length === 0}
+          >
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={deleteTypeLoading}
+              disabled={!currentActiveType || activeExperimentTypes.length === 0}
+            >
+              删除检测类型
+            </Button>
+          </Popconfirm>
           </Space>
         }
       >

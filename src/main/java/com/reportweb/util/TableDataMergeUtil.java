@@ -148,4 +148,66 @@ public final class TableDataMergeUtil {
         }
         return blocks;
     }
+
+    /**
+     * Word 检测数据表单元格：无行→空白；末尾全「/」占位行→「/」；普通行缺字段→空白。
+     */
+    public static String tableDataCellDisplay(JsonNode rowData, String fieldKey) {
+        if (rowData == null) {
+            return "";
+        }
+        if (isTrailingSlashPlaceholderRow(rowData)) {
+            return "/";
+        }
+        if (fieldKey == null || fieldKey.isEmpty() || !rowData.has(fieldKey) || rowData.get(fieldKey).isNull()) {
+            return "";
+        }
+        JsonNode v = rowData.get(fieldKey);
+        if (v.isNumber()) {
+            return formatNumberForDisplay(v);
+        }
+        String t = v.asText().trim();
+        return t.isEmpty() ? "" : t;
+    }
+
+    /** 按顺序尝试多个列名（如 UT 缺陷「位置」/「起点位置」）。 */
+    public static String tableDataCellDisplayFirst(JsonNode rowData, String... fieldKeys) {
+        if (rowData == null) {
+            return "";
+        }
+        if (isTrailingSlashPlaceholderRow(rowData)) {
+            return "/";
+        }
+        if (fieldKeys != null) {
+            for (String key : fieldKeys) {
+                if (key == null || key.isEmpty() || !rowData.has(key) || rowData.get(key).isNull()) {
+                    continue;
+                }
+                JsonNode v = rowData.get(key);
+                if (v.isNumber()) {
+                    String num = formatNumberForDisplay(v);
+                    if (!num.isEmpty()) {
+                        return num;
+                    }
+                    continue;
+                }
+                String t = v.asText().trim();
+                if (!t.isEmpty()) {
+                    return t;
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String formatNumberForDisplay(JsonNode v) {
+        if (v.isIntegralNumber()) {
+            return String.valueOf(v.asLong());
+        }
+        double d = v.asDouble();
+        if (d == Math.rint(d)) {
+            return String.valueOf((long) d);
+        }
+        return String.valueOf(d);
+    }
 }
