@@ -28,6 +28,7 @@ import com.reportweb.util.TableSchemaUtil;
 import com.reportweb.util.TableSchemaUtil.SchemaColumn;
 import com.reportweb.util.UltrasonicThicknessMinRequiredRules;
 import com.reportweb.util.WordEmbedImageUtil;
+import com.reportweb.util.WordWatermarkUtil;
 import com.reportweb.util.ExportTextOverrides;
 import com.reportweb.repository.ImageRepository;
 import com.reportweb.repository.ProjectComponentRepository;
@@ -474,6 +475,22 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
     /** 润电公司全称（页眉/标题区；声明条款等法律正文仍硬编码润电） */
     private static final String RUNDIAN_COMPANY_NAME = "润电能源科学技术有限公司";
+
+    /** 总报告 / 第三方导出 Word 节页眉页脚文案 */
+    private record HeaderFooterBranding(String reportNumber, String companyName) {
+        static HeaderFooterBranding forSummaryProject(Project project) {
+            String num =
+                    project != null && project.getProjectNumber() != null ? project.getProjectNumber() : "";
+            return new HeaderFooterBranding(num, RUNDIAN_COMPANY_NAME);
+        }
+
+        static HeaderFooterBranding forThirdPartyExport(Project project) {
+            return new HeaderFooterBranding(
+                    ThirdPartyPlaceholders.effectiveThirdPartyProjectNumberBase(
+                            project != null ? project.getThirdPartyProjectNumber() : null),
+                    ThirdPartyPlaceholders.blankToDefault(project != null ? project.getThirdPartyName() : null));
+        }
+    }
     /** 约 2 个汉字宽度（10.5pt 量级），用于检测通知单签行左缩进与右侧制表位边距 */
     private static final int NOTIFICATION_SIGNATURE_TWO_CHAR_TWIPS = 420;
     private static final String PROJECT_TYPE_ANTI_WEAR_EXPLOSION = "防磨防爆";
@@ -486,16 +503,18 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     /** 总报告正文：当前单项在润电/第三方子集内的序号，从 1 开始（与 -001 对齐）；未设置时单项导出等用库内编号 */
     private static final ThreadLocal<Integer> CURRENT_REPORT_INDEX_1_BASED = new ThreadLocal<>();
     /**
-     * 声明页末尾分节符（正文节起始）。页眉页脚先写在 body.sectPr；文末插入附录后最后一节变为附录，
-     * 需把同一套 header/footer 引用同步到此 sectPr，正文节才不会丢页眉页码。
+     * 声明页末尾 NEXT_PAGE 分节符所在 {@code CTSectPr}（声明节结束、项目信息节前）。
      */
     private static final ThreadLocal<CTSectPr> SUMMARY_DECLARATION_BREAK_SECT_PR = new ThreadLocal<>();
 
     /**
-     * 正文带内容页眉/页脚的锚点：项目详情页<strong>首段</strong>上「连续分节」的 {@code CTSectPr}。
-     * 勿把带内容的页眉绑在声明页末的 {@code NEXT_PAGE} 段上——Word 常仍把该节页眉画在声明页，而详情及后续无页眉。
+     * 正文带内容页眉/页脚的锚点：项目信息页首段上 CONTINUOUS 分节的 {@code CTSectPr}（详情～概述～单项～附录前）。
+     * 文末无第三方 PDF 时需将同一套 hdr/ftr 引用镜像到 body.sectPr，否则 Word 可能不渲染页眉页脚。
      */
     private static final ThreadLocal<CTSectPr> MAIN_BODY_HDR_SECT_PR = new ThreadLocal<>();
+
+    /** 总报告生成时为 true，正文节页眉写入华润/润电平铺水印。 */
+    private static final ThreadLocal<Boolean> SUMMARY_WATERMARK_ENABLED = new ThreadLocal<>();
 
     /**
      * 超声/相控阵检测内容多行拆分：当前段对应 rows 下标、总行数。
@@ -571,6 +590,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         CURRENT_REPORT_INDEX_1_BASED.remove();
         SUMMARY_DECLARATION_BREAK_SECT_PR.remove();
         MAIN_BODY_HDR_SECT_PR.remove();
+        SUMMARY_WATERMARK_ENABLED.remove();
     }
 
     private static boolean isAntiWearExplosionProject(Project project) {
@@ -743,6 +763,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
 
             MAIN_BODY_HDR_SECT_PR.remove();
+            SUMMARY_WATERMARK_ENABLED.set(true);
 
             // 设置页面大小（A4）- 只在Body级别设置一次，新节会继承这个设置
             setPageSizeA4(document, false);
@@ -769,12 +790,13 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             // 添加换页符，确保第一个单项报告在新页开始
             document.createParagraph().createRun().addBreak(BreakType.PAGE);
 
-            ensureMainBodyHeaderFooter(document, project);
+            ensureMainBodyHeaderFooter(document, HeaderFooterBranding.forSummaryProject(project));
 
             // 总报告正文仅保留润电单项，第三方完整版改为用户上传附件拼到文末。
             try {
                 appendRunDianSingleReportsOnly(document, project, runDianReports);
                 appendProjectReportFigures(document, project);
+                finalizeMainBodyHeaderFooter(document, HeaderFooterBranding.forSummaryProject(project));
                 appendUploadedThirdPartyFullAtEnd(document, project);
                 mirrorMainBodyHeaderFooterRefsToBodySectPrIfNeeded(document, project);
             } finally {
@@ -819,8 +841,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         try (XWPFDocument document = new XWPFDocument();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
 
+            MAIN_BODY_HDR_SECT_PR.remove();
+
             setPageSizeA4(document, false);
             setDocumentMarginsCm(document, 2.6, 2.6, 2.5, 2.6);
+            enableUpdateFieldsOnOpen(document);
+
+            HeaderFooterBranding branding = HeaderFooterBranding.forThirdPartyExport(project);
+            XWPFParagraph anchor = document.createParagraph();
+            beginMainBodySectionWithHeaderFooter(document, anchor, branding);
 
             try {
                 // 第三方专用导出：只含第三方样式单项；防磨防爆项目无第三方子集，仍输出润电模板单项
@@ -831,6 +860,8 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                             document, project, Collections.emptyList(), thirdPartyReports);
                 }
                 appendProjectReportFigures(document, project);
+                finalizeMainBodyHeaderFooter(document, branding);
+                mirrorMainBodyHeaderFooterRefsToBodySectPr(document);
             } finally {
                 clearBrandingContext();
             }
@@ -4044,7 +4075,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     /**
      * 概述与分页之后、单项报告拼接之前再绑一次正文节页眉页脚（防止中间生成改写节引用）。
      */
-    private void ensureMainBodyHeaderFooter(XWPFDocument document, Project project) {
+    private void ensureMainBodyHeaderFooter(XWPFDocument document, HeaderFooterBranding branding) {
         CTSectPr sectPr = MAIN_BODY_HDR_SECT_PR.get();
         if (sectPr == null) {
             log.warn("MAIN_BODY_HDR_SECT_PR unset; skip ensure main body header/footer.");
@@ -4056,22 +4087,76 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                     sectPr.sizeOfHeaderReferenceArray(),
                     sectPr.sizeOfFooterReferenceArray());
         }
-        createHeaderFooterForSection(document, sectPr, project.getProjectNumber());
+        createHeaderFooterForSection(document, sectPr, branding);
     }
 
     /**
-     * 写入总报告正文节页眉（报告编码）与页脚（公司名 + 第几页 共几节页）。
+     * 项目信息页首段（或第三方导出文档首段）：CONTINUOUS 分节并绑定正文页眉页脚（起算第 1 页）。
      */
-    private void populateMainBodyHeaderFooterParts(XWPFHeader xwpfHeader, XWPFFooter xwpfFooter, String projectNumber) {
+    private void beginMainBodySectionWithHeaderFooter(
+            XWPFDocument document, XWPFParagraph anchorParagraph, HeaderFooterBranding branding) {
+        CTP ctp = anchorParagraph.getCTP();
+        CTPPr pPr = ctp.isSetPPr() ? ctp.getPPr() : ctp.addNewPPr();
+        if (pPr.isSetSectPr()) {
+            pPr.unsetSectPr();
+        }
+        CTSectPr sectPr = pPr.addNewSectPr();
+        CTSectType sectType = sectPr.isSetType() ? sectPr.getType() : sectPr.addNewType();
+        sectType.setVal(STSectionMark.CONTINUOUS);
+        setSectPrPageSizeA4(sectPr, false);
+        setSectPrMarginsCm(sectPr, 2.6, 2.6, 2.5, 2.6);
+        CTPageNumber pageNumber =
+                sectPr.isSetPgNumType() ? sectPr.getPgNumType() : sectPr.addNewPgNumType();
+        pageNumber.setStart(BigInteger.valueOf(1));
+        MAIN_BODY_HDR_SECT_PR.set(sectPr);
+        createHeaderFooterForSection(document, sectPr, branding);
+    }
+
+    /**
+     * 正文全部写入后再次刷新页眉页脚，并镜像 hdr/ftr 引用到 body.sectPr（便于 Word 渲染末节）。
+     */
+    private void finalizeMainBodyHeaderFooter(XWPFDocument document, HeaderFooterBranding branding) {
+        CTSectPr main = MAIN_BODY_HDR_SECT_PR.get();
+        if (main == null) {
+            log.warn("finalizeMainBodyHeaderFooter: MAIN_BODY_HDR_SECT_PR unset; skip.");
+            return;
+        }
+        createHeaderFooterForSection(document, main, branding);
+        try {
+            CTBody ctBody = document.getDocument().getBody();
+            CTSectPr dest = ctBody.isSetSectPr() ? ctBody.getSectPr() : ctBody.addNewSectPr();
+            copySectionHeaderFooterReferences(main, dest);
+            setSectPrPageSizeA4(dest, false);
+            setSectPrMarginsCm(dest, 2.6, 2.6, 2.5, 2.6);
+        } catch (Exception e) {
+            log.warn("finalizeMainBodyHeaderFooter failed to mirror to body sectPr: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 写入正文节页眉（报告编号）与页脚（公司名 + 第 x 页 共 Y 页）。
+     */
+    private void populateMainBodyHeaderFooterParts(
+            XWPFHeader xwpfHeader, XWPFFooter xwpfFooter, HeaderFooterBranding branding) {
+        String reportNumber = branding != null ? branding.reportNumber() : "";
+        String companyName =
+                branding != null && branding.companyName() != null ? branding.companyName() : "";
         while (!xwpfHeader.getParagraphs().isEmpty()) {
             xwpfHeader.removeParagraph(xwpfHeader.getParagraphs().get(0));
+        }
+        if (Boolean.TRUE.equals(SUMMARY_WATERMARK_ENABLED.get())) {
+            try {
+                WordWatermarkUtil.appendSummaryWatermark(xwpfHeader);
+            } catch (IOException e) {
+                log.warn("Failed to append summary watermark to header: {}", e.getMessage());
+            }
         }
         XWPFParagraph xwpfHeaderPara = xwpfHeader.createParagraph();
         xwpfHeaderPara.setAlignment(ParagraphAlignment.RIGHT);
         XWPFRun xwpfHeaderRun = xwpfHeaderPara.createRun();
         xwpfHeaderRun.setFontFamily("宋体");
         xwpfHeaderRun.setFontSize(10.5);
-        xwpfHeaderRun.setText("报告编码:" + (projectNumber != null ? projectNumber : ""));
+        xwpfHeaderRun.setText("报告编号：" + reportNumber);
 
         while (!xwpfFooter.getParagraphs().isEmpty()) {
             xwpfFooter.removeParagraph(xwpfFooter.getParagraphs().get(0));
@@ -4080,11 +4165,12 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         footerPara.setAlignment(ParagraphAlignment.LEFT);
         footerPara.setSpacingBefore(0);
         footerPara.setSpacingAfter(0);
+        addParagraphTopBorder(footerPara);
 
         XWPFRun footerLeftRun = footerPara.createRun();
         footerLeftRun.setFontFamily("宋体");
         footerLeftRun.setFontSize(10.5);
-        footerLeftRun.setText(brandingCompanyName());
+        footerLeftRun.setText(companyName);
 
         CTP ctp = footerPara.getCTP();
         CTPPr pPr = ctp.isSetPPr() ? ctp.getPPr() : ctp.addNewPPr();
@@ -4100,7 +4186,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
 
         CTR ctr = footerRightRun.getCTR();
         CTText text1 = ctr.addNewT();
-        text1.setStringValue("第");
+        text1.setStringValue("第 ");
         CTFldChar fldCharBegin1 = ctr.addNewFldChar();
         fldCharBegin1.setFldCharType(STFldCharType.BEGIN);
         CTText instrText1 = ctr.addNewInstrText();
@@ -4108,7 +4194,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         CTFldChar fldCharEnd1 = ctr.addNewFldChar();
         fldCharEnd1.setFldCharType(STFldCharType.END);
         CTText text2 = ctr.addNewT();
-        text2.setStringValue("页 共");
+        text2.setStringValue(" 页 共 ");
         CTFldChar fldCharBegin2 = ctr.addNewFldChar();
         fldCharBegin2.setFldCharType(STFldCharType.BEGIN);
         CTText instrText2 = ctr.addNewInstrText();
@@ -4116,16 +4202,17 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         CTFldChar fldCharEnd2 = ctr.addNewFldChar();
         fldCharEnd2.setFldCharType(STFldCharType.END);
         CTText text3 = ctr.addNewT();
-        text3.setStringValue("页");
+        text3.setStringValue(" 页");
     }
 
     /**
      * 为指定节创建页眉和页脚
      * @param document Word文档对象
      * @param sectPr 节属性对象
-     * @param projectNumber 报告编码
+     * @param branding 页眉报告编号与页脚公司名
      */
-    private void createHeaderFooterForSection(XWPFDocument document, CTSectPr sectPr, String projectNumber) {
+    private void createHeaderFooterForSection(
+            XWPFDocument document, CTSectPr sectPr, HeaderFooterBranding branding) {
         try {
             // 仅有在本 sectPr 已挂 hdr/ftr 引用时才允许「复用部件」：否则 POI 仍可能从文档别处解析出非 null 的
             // default header/footer，误走分支并直接 return，导致当前节从未写入 headerReference/footerReference → 全文无页眉。
@@ -4136,7 +4223,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 XWPFHeader existingHeader = policy.getDefaultHeader();
                 XWPFFooter existingFooter = policy.getDefaultFooter();
                 if (existingHeader != null && existingFooter != null) {
-                    populateMainBodyHeaderFooterParts(existingHeader, existingFooter, projectNumber);
+                    populateMainBodyHeaderFooterParts(existingHeader, existingFooter, branding);
                     if (log.isDebugEnabled()) {
                         log.debug(
                                 "createHeaderFooterForSection: reused DEFAULT header/footer on sectPr (hdrRefs={}, ftrRefs={})",
@@ -4153,7 +4240,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             XWPFHeader xwpfHeader = policy.createHeader(XWPFHeaderFooterPolicy.DEFAULT);
             XWPFFooter xwpfFooter = policy.createFooter(XWPFHeaderFooterPolicy.DEFAULT);
             if (xwpfHeader != null && xwpfFooter != null) {
-                populateMainBodyHeaderFooterParts(xwpfHeader, xwpfFooter, projectNumber);
+                populateMainBodyHeaderFooterParts(xwpfHeader, xwpfFooter, branding);
             }
 
         } catch (Exception e) {
@@ -4196,27 +4283,15 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * 无第三方 PDF 附录时，文档最后一节主要由 {@code w:body/w:sectPr} 描述；若页眉仅挂在段落级 sectPr 上，
-     * Word 合并末节属性时可能得不到 hdr/ftr，表现为「全程无页眉页脚」。将正文锚点节的引用镜像到 body 末尾 sectPr（同一 r:id 指向同一部件）。
-     * 有附录时由 {@link #syncBodySectPrForAppendixWithoutHeaderFooter} 单独处理 body，此处跳过。
+     * 将正文锚点节的 hdr/ftr 引用镜像到 body 末尾 sectPr。
      */
-    private void mirrorMainBodyHeaderFooterRefsToBodySectPrIfNeeded(XWPFDocument document, Project project) {
-        String relPath = project.getSummaryThirdPartyFullRelPath();
-        if (relPath != null && !relPath.trim().isEmpty()) {
-            Path attachmentPath = resolveSummaryAttachmentPath(relPath.trim());
-            if (Files.exists(attachmentPath)) {
-                String lower = attachmentPath.getFileName().toString().toLowerCase(Locale.ROOT);
-                if (lower.endsWith(".pdf")) {
-                    return;
-                }
-            }
-        }
+    private void mirrorMainBodyHeaderFooterRefsToBodySectPr(XWPFDocument document) {
         CTSectPr main = MAIN_BODY_HDR_SECT_PR.get();
         if (main == null) {
             return;
         }
         if (main.sizeOfHeaderReferenceArray() == 0 || main.sizeOfFooterReferenceArray() == 0) {
-            log.warn("mirrorMainBodyHeaderFooterRefsToBodySectPrIfNeeded: main sectPr has no hdr/ftr refs; skip mirror.");
+            log.warn("mirrorMainBodyHeaderFooterRefsToBodySectPr: main sectPr has no hdr/ftr refs; skip mirror.");
             return;
         }
         try {
@@ -4236,8 +4311,27 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                 dr.setId(src.getId());
             }
         } catch (Exception e) {
-            log.warn("mirrorMainBodyHeaderFooterRefsToBodySectPrIfNeeded failed: {}", e.getMessage());
+            log.warn("mirrorMainBodyHeaderFooterRefsToBodySectPr failed: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 无第三方 PDF 附录时，文档最后一节主要由 {@code w:body/w:sectPr} 描述；若页眉仅挂在段落级 sectPr 上，
+     * Word 合并末节属性时可能得不到 hdr/ftr，表现为「全程无页眉页脚」。将正文锚点节的引用镜像到 body 末尾 sectPr（同一 r:id 指向同一部件）。
+     * 有附录时由 {@link #syncBodySectPrForAppendixWithoutHeaderFooter} 单独处理 body，此处跳过。
+     */
+    private void mirrorMainBodyHeaderFooterRefsToBodySectPrIfNeeded(XWPFDocument document, Project project) {
+        String relPath = project.getSummaryThirdPartyFullRelPath();
+        if (relPath != null && !relPath.trim().isEmpty()) {
+            Path attachmentPath = resolveSummaryAttachmentPath(relPath.trim());
+            if (Files.exists(attachmentPath)) {
+                String lower = attachmentPath.getFileName().toString().toLowerCase(Locale.ROOT);
+                if (lower.endsWith(".pdf")) {
+                    return;
+                }
+            }
+        }
+        mirrorMainBodyHeaderFooterRefsToBodySectPr(document);
     }
 
     /**
@@ -8658,7 +8752,7 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
     }
 
     /**
-     * 金相标尺裁剪图附页：外框单格 + 内部 2×2 无边框排版，每页 4 张，尺寸 7.20×5.25 cm。
+     * 金相附图附页（含裁剪/未裁剪，统一 7.20×5.25 cm）：外框单格 + 内部 2×2 无边框排版，每页 4 张。
      *
      * @return 下一可用图序号
      */
@@ -11104,24 +11198,10 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
         // ========== 10. 附图附页(如果有imageAttachments) ==========
         try {
             List<ImageInfo> allMetImages = collectImageInfosForReport(report);
-            List<ImageInfo> croppedMetImages = new ArrayList<>();
-            List<ImageInfo> nonCroppedMetImages = new ArrayList<>();
-            for (ImageInfo info : allMetImages) {
-                if (info.metCropped) {
-                    croppedMetImages.add(info);
-                } else {
-                    nonCroppedMetImages.add(info);
-                }
-            }
-            int nextImageNumber = 1;
-            if (!croppedMetImages.isEmpty()) {
-                nextImageNumber = generateMetCroppedImageAppendix(
-                        document, report, project, croppedMetImages,
-                        "金相检测报告（附页）", MET_DOC_NUMBER, true, nextImageNumber);
-            }
-            if (!nonCroppedMetImages.isEmpty()) {
-                generateImageAppendix(document, report, project, "金相检测报告（附页）", MET_DOC_NUMBER, true,
-                        nonCroppedMetImages, nextImageNumber);
+            if (!allMetImages.isEmpty()) {
+                generateMetCroppedImageAppendix(
+                        document, report, project, allMetImages,
+                        "金相检测报告（附页）", MET_DOC_NUMBER, true, 1);
             }
         } catch (Exception appendixEx) {
             log.error("Error generating Metallographic image appendix for report {}: {}",
@@ -18037,15 +18117,18 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
                                 + "cannot strip hdr/ftr from declaration break sectPr.");
             }
 
-            // ========== 4. 添加空行（共三行） ==========
+            // ========== 4. 添加空行（共三行）；首段 CONTINUOUS 分节并绑定正文页眉页脚 ==========
             for (int i = 0; i < 3; i++) {
                 XWPFParagraph emptyPara = document.createParagraph();
                 emptyPara.setSpacingBefore(0);
                 emptyPara.setSpacingAfter(0);
                 setExactLineSpacing(emptyPara, 20);
                 emptyPara.setIndentationLeft(600);
+                if (i == 0) {
+                    beginMainBodySectionWithHeaderFooter(
+                            document, emptyPara, HeaderFooterBranding.forSummaryProject(project));
+                }
             }
-
 
             // ========== 1. 项目名称（顶部） ==========
             // 第一行：项目名称（粗体）: 客户方（细体）
@@ -18060,21 +18143,6 @@ public class WordGeneratorServiceImpl implements WordGeneratorService {
             // 整体缩进2个字符（15号字体：2 × 15磅 × 20 twips/磅 = 600 twips）
             projectNamePara.setIndentationLeft(600);
 
-            // 主正文页眉绑定到 body 末节（声明页末 NEXT_PAGE 之后的节），避免段落级 sectPr 把正文切成窄节。
-            CTSectPr mainBodySectPr = document.getDocument().getBody().isSetSectPr()
-                    ? document.getDocument().getBody().getSectPr()
-                    : document.getDocument().getBody().addNewSectPr();
-            setSectPrPageSizeA4(mainBodySectPr, false);
-            setSectPrMarginsCm(mainBodySectPr, 2.6, 2.6, 2.5, 2.6);
-            CTPageNumber pageNumber =
-                    mainBodySectPr.isSetPgNumType()
-                            ? mainBodySectPr.getPgNumType()
-                            : mainBodySectPr.addNewPgNumType();
-            pageNumber.setStart(BigInteger.valueOf(1));
-
-            MAIN_BODY_HDR_SECT_PR.set(mainBodySectPr);
-            createHeaderFooterForSection(document, mainBodySectPr, project.getProjectNumber());
-            
             // "项目名称: 
             XWPFRun labelRun = projectNamePara.createRun();
             labelRun.setFontFamily("宋体");

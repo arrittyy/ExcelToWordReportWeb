@@ -20,6 +20,7 @@ import com.reportweb.repository.ProjectComponentRepository;
 import com.reportweb.repository.ProjectInstrumentRepository;
 import com.reportweb.repository.ImageAttachmentRepository;
 import com.reportweb.security.CustomUserPrincipal;
+import com.reportweb.security.ProjectAccess;
 import com.reportweb.security.UserRoleUtils;
 import com.reportweb.service.WordGeneratorService;
 import com.reportweb.service.DefectDetectionService;
@@ -107,22 +108,7 @@ public class ReportsController {
                 }
             } else {
                 if (projectId != null) {
-                    if (isSubUser && currentUser.getParentUserId() != null) {
-                        Project project = projectRepository.findByIdAndUserId(projectId, currentUser.getParentUserId()).orElse(null);
-                        if (project == null || !"InProgress".equals(project.getStatus())) {
-                            reports = new ArrayList<>();
-                        } else {
-                            reports = reportRepository.findByProjectIdOrderById(projectId);
-                        }
-                    } else if (!isSubUser) {
-                        if (projectRepository.findByIdAndUserId(projectId, userId).isEmpty()) {
-                            reports = new ArrayList<>();
-                        } else {
-                            reports = reportRepository.findByProjectIdOrderById(projectId);
-                        }
-                    } else {
-                        reports = reportRepository.findByUserIdAndProjectIdOrderById(userId, projectId);
-                    }
+                    reports = listReportsForAccessibleProject(projectId, currentUser, false);
                 } else {
                     if (!isSubUser) {
                         reports = reportRepository.findByProjectOwnerUserIdOrderById(userId);
@@ -209,25 +195,7 @@ public class ReportsController {
                 }
             } else {
                 if (projectId != null) {
-                    if (isSubUser && currentUser.getParentUserId() != null) {
-                        Project project = projectRepository.findByIdAndUserId(projectId, currentUser.getParentUserId()).orElse(null);
-                        if (project == null || !"InProgress".equals(project.getStatus())) {
-                            reports = new ArrayList<>();
-                        } else {
-                            reports = reportRepository.findByProjectIdWithRelations(projectId);
-                        }
-                    } else if (!isSubUser) {
-                        if (projectRepository.findByIdAndUserId(projectId, userId).isEmpty()) {
-                            reports = new ArrayList<>();
-                        } else {
-                            reports = reportRepository.findByProjectIdWithRelations(projectId);
-                        }
-                    } else {
-                        reports = reportRepository.findByProjectIdWithRelations(projectId);
-                        reports = reports.stream()
-                                .filter(r -> userId.equals(r.getUserId()))
-                                .collect(Collectors.toList());
-                    }
+                    reports = listReportsForAccessibleProject(projectId, currentUser, true);
                 } else {
                     if (!isSubUser) {
                         reports = reportRepository.findByProjectOwnerUserIdWithRelations(userId);
@@ -1120,7 +1088,34 @@ public class ReportsController {
         if (sub != null) {
             return sub;
         }
-        return reportAccessibleToProjectOwner(currentUser, reportId);
+        Report owner = reportAccessibleToProjectOwner(currentUser, reportId);
+        if (owner != null) {
+            return owner;
+        }
+        return reportAccessibleViaProjectApprovalRole(currentUser, reportId);
+    }
+
+    /** 项目可读（含审批角色）时，可读该项目下任意报告（只读，不改写权限）。 */
+    private Report reportAccessibleViaProjectApprovalRole(
+            com.reportweb.entity.User currentUser, Integer reportId) {
+        Report report = reportRepository.findById(reportId).orElse(null);
+        if (report == null || report.getProjectId() == null) {
+            return null;
+        }
+        Project project = ProjectAccess.findProjectIfAccessible(
+                projectRepository, currentUser, report.getProjectId());
+        return project != null ? report : null;
+    }
+
+    private List<Report> listReportsForAccessibleProject(
+            Integer projectId, com.reportweb.entity.User currentUser, boolean withRelations) {
+        Project project = ProjectAccess.findProjectIfAccessible(projectRepository, currentUser, projectId);
+        if (project == null) {
+            return new ArrayList<>();
+        }
+        return withRelations
+                ? reportRepository.findByProjectIdWithRelations(projectId)
+                : reportRepository.findByProjectIdOrderById(projectId);
     }
 
     private void forceRefreshMetExportOverrides(Report report, ExperimentType experimentType) {

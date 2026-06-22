@@ -52,6 +52,24 @@ class WordExportJobAccessTest {
     assertFalse(WordExportJobAccess.canReadProject(sub, project));
   }
 
+  @Test
+  void assignedApprovalRoleCanReadInProgressProject() {
+    User reviewer = user("reviewer-1", "USER", null);
+    reviewer.setFullName("张三");
+    Project project = project(48, PARENT_ID, "InProgress");
+    project.setReviewerNdt("张三");
+    assertTrue(WordExportJobAccess.canReadProject(reviewer, project));
+  }
+
+  @Test
+  void assignedApprovalRoleCannotReadCompletedProject() {
+    User reviewer = user("reviewer-1", "USER", null);
+    reviewer.setFullName("张三");
+    Project project = project(48, PARENT_ID, "Completed");
+    project.setReviewerNdt("张三");
+    assertFalse(WordExportJobAccess.canReadProject(reviewer, project));
+  }
+
   private static User user(String id, String role, String parentUserId) {
     User u = new User();
     u.setId(id);

@@ -2,6 +2,7 @@ package com.reportweb.controller;
 
 import com.reportweb.entity.Project;
 import com.reportweb.entity.User;
+import com.reportweb.security.ProjectAccess;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -19,47 +20,30 @@ class ProjectsControllerApprovalAccessTest {
     }
 
     @Test
-    void canAccessProject_assignedRoleInProgress_isAllowed() throws Exception {
-        ProjectsController c = controller();
-        Method m = ProjectsController.class.getDeclaredMethod(
-                "canAccessProject", Project.class, boolean.class, boolean.class, String.class, String[].class);
-        m.setAccessible(true);
-
+    void canAccessProject_assignedRoleInProgress_isAllowed() {
         Project p = new Project();
         p.setUserId("owner-1");
         p.setStatus("InProgress");
         p.setReviewerNdt("张三");
 
-        boolean ok = (boolean) m.invoke(c, p, false, false, "other-owner", new String[]{"张三"});
-        assertTrue(ok);
+        assertTrue(ProjectAccess.canAccessProject(p, false, false, "other-owner", "张三"));
     }
 
     @Test
-    void canAccessProject_unassignedNonOwner_isDenied() throws Exception {
-        ProjectsController c = controller();
-        Method m = ProjectsController.class.getDeclaredMethod(
-                "canAccessProject", Project.class, boolean.class, boolean.class, String.class, String[].class);
-        m.setAccessible(true);
-
+    void canAccessProject_unassignedNonOwner_isDenied() {
         Project p = new Project();
         p.setUserId("owner-1");
         p.setStatus("InProgress");
         p.setWriterNdt("李四");
 
-        boolean ok = (boolean) m.invoke(c, p, false, false, "other-owner", new String[]{"王五"});
-        assertFalse(ok);
+        assertFalse(ProjectAccess.canAccessProject(p, false, false, "other-owner", "王五"));
     }
 
     @Test
-    void isProjectResponsible_trimmedName_matchTrue() throws Exception {
-        Method m = ProjectsController.class.getDeclaredMethod(
-                "isProjectResponsible", Project.class, String[].class);
-        m.setAccessible(true);
-
+    void isProjectResponsible_trimmedName_matchTrue() {
         Project p = new Project();
         p.setResponsiblePerson("  赵六 ");
-        boolean ok = (boolean) m.invoke(null, p, new String[]{"赵六"});
-        assertTrue(ok);
+        assertTrue(ProjectAccess.isProjectResponsible(p, "赵六"));
     }
 
     @Test
