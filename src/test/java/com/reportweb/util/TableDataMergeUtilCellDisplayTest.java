@@ -50,4 +50,13 @@ class TableDataMergeUtilCellDisplayTest {
                 """);
         assertEquals("/", TableDataMergeUtil.tableDataCellDisplayFirst(row, "位置", "起点位置"));
     }
+
+    @Test
+    void typeColumn_stripsParentheticalForDisplay() throws Exception {
+        JsonNode row = objectMapper.readTree("""
+                {"类型":"螺栓（检测部位：端部）","编号":"N1"}
+                """);
+        assertEquals("螺栓", TableDataMergeUtil.tableDataCellDisplay(row, "类型"));
+        assertEquals("N1", TableDataMergeUtil.tableDataCellDisplay(row, "编号"));
+    }
 }

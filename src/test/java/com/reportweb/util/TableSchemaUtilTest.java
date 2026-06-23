@@ -45,6 +45,12 @@ class TableSchemaUtilTest {
     }
 
     @Test
+    void formatLabeledPhrase_typeValue_stripsParenthetical() {
+        assertEquals("类型为螺栓", TableSchemaUtil.formatLabeledPhrase("类型", "螺栓（检测部位：端部）"));
+        assertEquals("类型为角焊缝", TableSchemaUtil.formatLabeledPhrase("类型", "角焊缝（联箱）"));
+    }
+
+    @Test
     void rowSortKey_prefersNumberOverSerial() {
         ObjectNode row = objectMapper.createObjectNode();
         row.put("序号", "9");
